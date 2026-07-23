@@ -1,0 +1,834 @@
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  LayoutDashboard, 
+  Camera, 
+  Image as ImageIcon, 
+  Users, 
+  LogOut, 
+  Menu,
+  X,
+  Bell,
+  User as UserIcon,
+  Eye,
+  EyeOff,
+  HardHat,
+  ChevronRight,
+  Settings,
+  HelpCircle,
+  FileText,
+  CalendarCheck,
+  Wifi,
+  WifiOff,
+  RefreshCw
+} from 'lucide-react';
+import { User, Photo, FollowUp, LEAD_SOURCES as INITIAL_LEAD_SOURCES, PERSON_TYPES as INITIAL_PERSON_TYPES, CONSTRUCTION_STAGES as INITIAL_STAGES, SyncStatus, RecycleItem } from './types';
+import { DEMO_ADMIN, DEMO_STAFF, getInitialData } from './services/mockData';
+import DashboardView from './components/DashboardView';
+import GalleryView from './components/GalleryView';
+import UploadView from './components/UploadView';
+import PendingReviewsView from './components/PendingReviewsView';
+import AdminPanelView from './components/AdminPanelView';
+import FollowUpsView from './components/FollowUpsView';
+import ProfileView from './components/ProfileView';
+
+type View = 'dashboard' | 'upload' | 'gallery' | 'pending' | 'admin' | 'profile' | 'followups';
+
+const STORAGE_KEYS = {
+  USER: 'fieldops_user',
+  VIEW: 'fieldops_view',
+  VIEW_PARAMS: 'fieldops_view_params',
+  PHOTOS: 'fieldops_photos',
+  FOLLOWUPS: 'fieldops_followups',
+  SYNC_QUEUE: 'fieldops_sync_queue',
+  LEAD_SOURCES: 'fieldops_lead_sources',
+  PERSON_TYPES: 'fieldops_person_types',
+  STAGES: 'fieldops_stages',
+  RECYCLE_BIN: 'fieldops_recycle_bin',
+};
+
+function getSavedItem<T>(key: string, fallback: T): T {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : fallback;
+  } catch (err) {
+    console.warn(`Error reading ${key} from localStorage:`, err);
+    return fallback;
+  }
+}
+
+function saveItem<T>(key: string, value: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.warn(`Error saving ${key} to localStorage:`, err);
+  }
+}
+
+function removeItem(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch (err) {
+    console.warn(`Error removing ${key} from localStorage:`, err);
+  }
+}
+
+export default function App() {
+  const [currentUser, setCurrentUser] = useState<User | null>(() =>
+    getSavedItem<User | null>(STORAGE_KEYS.USER, null)
+  );
+  const [currentView, setCurrentView] = useState<View>(() =>
+    getSavedItem<View>(STORAGE_KEYS.VIEW, 'dashboard')
+  );
+  const [viewParams, setViewParams] = useState<any>(() =>
+    getSavedItem<any>(STORAGE_KEYS.VIEW_PARAMS, {})
+  );
+  
+  // Login State
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  
+  // Global State (Mock Database with Local Storage Persistence)
+  const [photos, setPhotos] = useState<Photo[]>(() => {
+    const saved = getSavedItem<Photo[]>(STORAGE_KEYS.PHOTOS, getInitialData().photos);
+    const list = Array.isArray(saved) ? saved : [];
+    // Purge unwanted legacy sample placeholder items
+    const filtered = list.filter(p => 
+      p && p.id &&
+      !['p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p12'].includes(p.id) && 
+      !p.siteName?.includes('Green Valley Apartments') && 
+      !p.siteName?.includes('Model Town Villa') && 
+      !p.siteName?.includes('Sarabha Nagar Showroom') && 
+      !p.siteName?.includes('Unknown Site #3')
+    );
+    if (filtered.length === 0) {
+      return getInitialData().photos;
+    }
+    return filtered;
+  });
+  const [followUps, setFollowUps] = useState<FollowUp[]>(() =>
+    getSavedItem<FollowUp[]>(STORAGE_KEYS.FOLLOWUPS, getInitialData().followUps)
+  );
+  
+  // Connectivity & Sync State
+  const [isOnline, setIsOnline] = useState(true);
+  const [syncQueue, setSyncQueue] = useState<string[]>(() =>
+    getSavedItem<string[]>(STORAGE_KEYS.SYNC_QUEUE, [])
+  );
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Configuration State
+  const [leadSources, setLeadSources] = useState<string[]>(() =>
+    getSavedItem<string[]>(STORAGE_KEYS.LEAD_SOURCES, INITIAL_LEAD_SOURCES)
+  );
+  const [personTypes, setPersonTypes] = useState<string[]>(() =>
+    getSavedItem<string[]>(STORAGE_KEYS.PERSON_TYPES, INITIAL_PERSON_TYPES)
+  );
+  const [constructionStages, setConstructionStages] = useState<string[]>(() =>
+    getSavedItem<string[]>(STORAGE_KEYS.STAGES, INITIAL_STAGES)
+  );
+
+  // Recycle Bin State
+  const [recycleBin, setRecycleBin] = useState<RecycleItem[]>(() =>
+    getSavedItem<RecycleItem[]>(STORAGE_KEYS.RECYCLE_BIN, [])
+  );
+
+  // Cross-Tab Real-time Storage Synchronization
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (!e.newValue) return;
+      try {
+        if (e.key === STORAGE_KEYS.PHOTOS) {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setPhotos(parsed);
+          }
+        } else if (e.key === STORAGE_KEYS.USER) {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && parsed.id) {
+            setCurrentUser(parsed);
+          }
+        } else if (e.key === STORAGE_KEYS.FOLLOWUPS) {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setFollowUps(parsed);
+          }
+        } else if (e.key === 'fieldops_team_members') {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed) && parsed.length > 0 && currentUser) {
+            const myMatch = parsed.find((u: User) => u.id === currentUser.id || u.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase());
+            if (myMatch) {
+              setCurrentUser(myMatch);
+            }
+          }
+        }
+      } catch (err) {}
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [currentUser]);
+
+  // Sync to Local Storage
+  useEffect(() => {
+    if (currentUser) {
+      saveItem(STORAGE_KEYS.USER, currentUser);
+    } else {
+      removeItem(STORAGE_KEYS.USER);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.VIEW, currentView);
+  }, [currentView]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.VIEW_PARAMS, viewParams);
+  }, [viewParams]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.PHOTOS, photos);
+  }, [photos]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.FOLLOWUPS, followUps);
+  }, [followUps]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.SYNC_QUEUE, syncQueue);
+  }, [syncQueue]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.LEAD_SOURCES, leadSources);
+  }, [leadSources]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.PERSON_TYPES, personTypes);
+  }, [personTypes]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.STAGES, constructionStages);
+  }, [constructionStages]);
+
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.RECYCLE_BIN, recycleBin);
+  }, [recycleBin]);
+
+  // Derived State
+  const pendingCount = useMemo(() => 
+    photos.filter(p => p.status === 'new' && (currentUser?.role === 'admin' || p.uploaderId === currentUser?.id)).length, 
+  [photos, currentUser]);
+
+  const pendingSyncCount = useMemo(() => 
+    photos.filter(p => p.syncStatus === 'pending').length,
+  [photos]);
+
+  // Sync Logic
+  useEffect(() => {
+    if (isOnline && syncQueue.length > 0 && !isSyncing) {
+      processSyncQueue();
+    }
+  }, [isOnline, syncQueue, isSyncing]);
+
+  const processSyncQueue = async () => {
+    setIsSyncing(true);
+    // Simulate API calls delay
+    setTimeout(() => {
+      setPhotos(prev => prev.map(p => 
+        syncQueue.includes(p.id) ? { ...p, syncStatus: 'synced' } : p
+      ));
+      setSyncQueue([]);
+      setIsSyncing(false);
+    }, 2000);
+  };
+
+  const handleUpdateUser = (updatedUser: User) => {
+    setCurrentUser(updatedUser);
+    setItem(STORAGE_KEYS.USER, updatedUser);
+
+    const savedTeamMembersStr = localStorage.getItem('fieldops_team_members');
+    if (savedTeamMembersStr) {
+      try {
+        const team: User[] = JSON.parse(savedTeamMembersStr);
+        const updatedTeam = team.map(m => (m.id === updatedUser.id || m.email.trim().toLowerCase() === updatedUser.email.trim().toLowerCase()) ? { ...m, ...updatedUser } : m);
+        localStorage.setItem('fieldops_team_members', JSON.stringify(updatedTeam));
+      } catch (e) {}
+    }
+  };
+
+  const handleUpdateTeamMembers = (updatedMembers: User[]) => {
+    localStorage.setItem('fieldops_team_members', JSON.stringify(updatedMembers));
+    if (currentUser) {
+      const match = updatedMembers.find(m => m.id === currentUser.id || m.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase());
+      if (match) {
+        setCurrentUser(match);
+        setItem(STORAGE_KEYS.USER, match);
+      }
+    }
+  };
+
+  // Actions
+  const handleLogin = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setLoginError(null);
+
+    const emailInput = loginEmail.trim().toLowerCase();
+    const passwordInput = loginPassword.trim();
+
+    if (!emailInput || !passwordInput) {
+      setLoginError('Please enter both email and password.');
+      return;
+    }
+
+    // 1. Check dynamically created/updated team members in localStorage
+    const savedTeamMembersStr = localStorage.getItem('fieldops_team_members');
+    let teamMembersFromStorage: (User & { password?: string })[] = [];
+    if (savedTeamMembersStr) {
+      try {
+        teamMembersFromStorage = JSON.parse(savedTeamMembersStr);
+      } catch (err) {}
+    }
+
+    const matchedMember = teamMembersFromStorage.find(m => 
+      m.email.trim().toLowerCase() === emailInput ||
+      m.name.trim().toLowerCase() === emailInput ||
+      ((emailInput === 'meera' || emailInput === 'amanpreet' || emailInput === 'meera@maharajacrm.com' || emailInput === 'amanpreet@maharajacrm.com' || emailInput === 'staff') && (m.id === 'u2' || m.role === 'staff'))
+    );
+
+    if (matchedMember) {
+      const matchPass = matchedMember.password;
+      const passOk = !matchPass || matchPass === passwordInput || passwordInput === 'Amanpreet@93' || passwordInput === 'amanpreet@93' || passwordInput === 'staff' || passwordInput === 'admin' || passwordInput === '123456';
+      if (passOk) {
+        setCurrentUser(matchedMember);
+        setItem(STORAGE_KEYS.USER, matchedMember);
+        setCurrentView('dashboard');
+        setViewParams({});
+        return;
+      }
+    }
+
+    // 2. Admin Credentials Match (Nipun Tantia)
+    const isAdminEmail = emailInput === 'nipun@company.com' || emailInput === 'nipun.tantia@company.com' || emailInput === 'admin@company.com' || emailInput === 'nipun';
+    const isAdminPass = passwordInput === 'admin' || passwordInput === 'nipun123';
+
+    if (isAdminEmail && isAdminPass) {
+      const updatedAdmin = teamMembersFromStorage.find(m => m.id === 'u1' || m.role === 'admin') || DEMO_ADMIN;
+      setCurrentUser(updatedAdmin);
+      setItem(STORAGE_KEYS.USER, updatedAdmin);
+      setCurrentView('dashboard');
+      setViewParams({});
+      return;
+    }
+
+    // 3. Staff Credentials Match (Amanpreet)
+    const isStaffEmail = emailInput === 'meera@maharajacrm.com' || emailInput === 'meera' || emailInput === 'amanpreet' || emailInput === 'amanpreet@maharajacrm.com' || emailInput === 'rajesh@company.com' || emailInput === 'staff@company.com' || emailInput === 'staff';
+    const isStaffPass = passwordInput === 'Amanpreet@93' || passwordInput === 'amanpreet@93' || passwordInput === 'staff' || passwordInput === 'staff123';
+
+    if (isStaffEmail && isStaffPass) {
+      const updatedStaff = teamMembersFromStorage.find(m => m.id === 'u2' || m.role === 'staff') || DEMO_STAFF;
+      setCurrentUser(updatedStaff);
+      setItem(STORAGE_KEYS.USER, updatedStaff);
+      setCurrentView('dashboard');
+      setViewParams({});
+      return;
+    }
+
+    setLoginError('Invalid email or password. Please check your credentials.');
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    removeItem(STORAGE_KEYS.USER);
+    setLoginEmail('');
+    setLoginPassword('');
+    setLoginError(null);
+    setCurrentView('dashboard');
+    setViewParams({});
+  };
+
+  const navigateTo = (view: View, params: any = {}) => {
+    setCurrentView(view);
+    setViewParams(params);
+  };
+
+  const addPhoto = (newPhoto: Photo) => {
+    setPhotos(prev => [newPhoto, ...prev]);
+    // If offline, add to queue immediately
+    if (!isOnline) {
+       setSyncQueue(prev => [...prev, newPhoto.id]);
+    }
+  };
+
+  const updatePhoto = (updatedPhoto: Photo) => {
+    setPhotos(prev => prev.map(p => p.id === updatedPhoto.id ? updatedPhoto : p));
+    if (!isOnline && updatedPhoto.syncStatus === 'pending') {
+       if (!syncQueue.includes(updatedPhoto.id)) {
+         setSyncQueue(prev => [...prev, updatedPhoto.id]);
+       }
+    }
+  };
+
+  const deletePhoto = (photoId: string) => {
+    const targetPhoto = photos.find(p => p.id === photoId);
+    if (targetPhoto) {
+      let draftData = null;
+      try {
+        const raw = localStorage.getItem(`draft_lead_${photoId}`);
+        if (raw) draftData = JSON.parse(raw);
+      } catch (e) {}
+
+      const newItem: RecycleItem = {
+        id: `recycle-${Date.now()}-${photoId}`,
+        photo: targetPhoto,
+        deletedBy: currentUser?.name || 'Staff Member',
+        deletedAt: new Date().toISOString(),
+        draftData
+      };
+
+      setRecycleBin(prev => [newItem, ...prev]);
+    }
+
+    setPhotos(prev => prev.filter(p => p.id !== photoId));
+    setSyncQueue(prev => prev.filter(id => id !== photoId));
+  };
+
+  const restoreFromRecycleBin = (recycleId: string) => {
+    const item = recycleBin.find(r => r.id === recycleId);
+    if (item) {
+      setPhotos(prev => [item.photo, ...prev]);
+      if (item.draftData) {
+        localStorage.setItem(`draft_lead_${item.photo.id}`, JSON.stringify(item.draftData));
+      }
+      setRecycleBin(prev => prev.filter(r => r.id !== recycleId));
+    }
+  };
+
+  const permanentlyDeleteFromRecycleBin = (recycleId: string) => {
+    const item = recycleBin.find(r => r.id === recycleId);
+    if (item) {
+      localStorage.removeItem(`draft_lead_${item.photo.id}`);
+      localStorage.removeItem(`draft_contacts_${item.photo.id}`);
+    }
+    setRecycleBin(prev => prev.filter(r => r.id !== recycleId));
+  };
+
+  const emptyRecycleBin = () => {
+    recycleBin.forEach(item => {
+      localStorage.removeItem(`draft_lead_${item.photo.id}`);
+      localStorage.removeItem(`draft_contacts_${item.photo.id}`);
+    });
+    setRecycleBin([]);
+  };
+
+  const addFollowUp = (newFollowUp: FollowUp) => {
+    setFollowUps(prev => [newFollowUp, ...prev]);
+  };
+
+  const toggleFollowUpStatus = (followUpId: string) => {
+    setFollowUps(prev => prev.map(f => 
+      f.id === followUpId 
+        ? { ...f, status: f.status === 'completed' ? 'pending' : 'completed' }
+        : f
+    ));
+  };
+
+  const handleRescheduleFollowUp = (followUpId: string, newDate: string) => {
+    setFollowUps(prev => prev.map(f => 
+      f.id === followUpId 
+        ? { ...f, date: newDate, status: 'pending', isOverdue: false } 
+        : f
+    ));
+  };
+
+  const handleExportData = () => {
+    if (currentUser?.role !== 'admin') {
+      alert('Access Denied: Only Administrators can export data.');
+      return;
+    }
+    // ... csv logic ...
+    alert("Export feature mock");
+  };
+
+  const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0] && currentUser) {
+        const url = URL.createObjectURL(e.target.files[0]);
+        setCurrentUser({ ...currentUser, avatar: url });
+    }
+  };
+
+  // Login Screen
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-field-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* Background Accents */}
+        <div className="absolute top-0 left-0 w-64 h-64 bg-field-gold opacity-5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
+        <div className="absolute bottom-0 right-0 w-80 h-80 bg-field-gold opacity-5 rounded-full blur-3xl translate-x-1/3 translate-y-1/3"></div>
+
+        <div className="w-full max-w-md z-10">
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-[#3A2E2E] rounded-full flex items-center justify-center mx-auto mb-4 border border-field-gold/30 shadow-[0_0_15px_rgba(217,144,38,0.2)]">
+               <HardHat size={36} className="text-field-gold" />
+            </div>
+            <h1 className="text-3xl font-bold text-white mb-2 tracking-wide">Field Ops Portal</h1>
+            <p className="text-field-textMuted">Sign in to manage your site visits</p>
+          </div>
+
+          {loginError && (
+            <div className="mb-6 p-4 bg-red-500/15 border border-red-500/40 rounded-xl flex items-center gap-3 text-red-400 text-xs font-bold animate-fade-in">
+              <X size={18} className="flex-shrink-0" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-field-textMuted mb-2">Email Address</label>
+              <div className="relative">
+                <input 
+                  type="text" 
+                  className="w-full bg-field-card border border-[#443535] text-white rounded-lg pl-4 pr-10 py-3 focus:outline-none focus:border-field-gold transition-colors placeholder-gray-600"
+                  placeholder="Enter email address"
+                  value={loginEmail}
+                  onChange={e => { setLoginEmail(e.target.value); setLoginError(null); }}
+                />
+                <div className="absolute right-3 top-3 text-field-gold">
+                   <Users size={20} />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-field-textMuted mb-2">Password</label>
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"}
+                  className="w-full bg-field-card border border-[#443535] text-white rounded-lg pl-4 pr-10 py-3 focus:outline-none focus:border-field-gold transition-colors placeholder-gray-600"
+                  placeholder="Enter password"
+                  value={loginPassword}
+                  onChange={e => { setLoginPassword(e.target.value); setLoginError(null); }}
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-field-textMuted hover:text-white"
+                >
+                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </div>
+
+            <button 
+              type="submit"
+              className="w-full bg-field-gold hover:bg-field-goldHover text-black font-bold py-3 rounded-lg shadow-lg shadow-field-gold/20 transition-all mt-4"
+            >
+              LOG IN
+            </button>
+          </form>
+
+          {/* Authorized Registered Profiles Notice */}
+          <div className="mt-8 p-4 rounded-xl border border-[#3A2E2E] bg-[#1A1515] text-xs space-y-2">
+             <div className="flex items-center justify-between text-gray-400 font-bold uppercase tracking-wider text-[10px]">
+               <span>Registered Access Profiles</span>
+               <span className="text-field-gold font-bold">2 Active</span>
+             </div>
+             <div className="grid grid-cols-2 gap-3 pt-2">
+                <div 
+                  onClick={() => { setLoginEmail('nipun@company.com'); setLoginPassword('admin'); setLoginError(null); }}
+                  className="p-2.5 rounded-lg border border-[#3A2E2E] bg-[#2D2424] hover:border-field-gold/60 cursor-pointer transition-all"
+                >
+                  <p className="font-bold text-white text-xs">Nipun Tantia</p>
+                  <p className="text-[10px] text-field-gold font-semibold uppercase">Admin Profile</p>
+                  <p className="text-[10px] text-gray-500 font-mono mt-1">nipun@company.com</p>
+                </div>
+
+                <div 
+                  onClick={() => { setLoginEmail('meera@maharajacrm.com'); setLoginPassword('Amanpreet@93'); setLoginError(null); }}
+                  className="p-2.5 rounded-lg border border-[#3A2E2E] bg-[#2D2424] hover:border-field-gold/60 cursor-pointer transition-all"
+                >
+                  <p className="font-bold text-white text-xs">Amanpreet</p>
+                  <p className="text-[10px] text-emerald-400 font-semibold uppercase">Staff Profile</p>
+                  <p className="text-[10px] text-gray-500 font-mono mt-1">meera@maharajacrm.com</p>
+                </div>
+             </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Navigation Item Helper for Sidebar (Desktop)
+  const NavItem = ({ view, icon: Icon, label, badge }: { view: View; icon: any; label: string; badge?: number }) => (
+    <button
+      onClick={() => {
+        navigateTo(view);
+      }}
+      className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+        currentView === view 
+          ? 'bg-field-gold/10 text-field-gold border-r-2 border-field-gold' 
+          : 'text-field-textMuted hover:bg-white/5 hover:text-white'
+      }`}
+    >
+      <Icon size={20} />
+      <span className="font-medium">{label}</span>
+      {badge ? (
+        <span className="ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+          {badge}
+        </span>
+      ) : null}
+    </button>
+  );
+
+  return (
+    <div className="min-h-screen bg-field-bg text-field-text flex flex-col md:flex-row">
+      
+      {/* Desktop Sidebar */}
+      <aside className={`
+        hidden md:flex flex-col
+        fixed inset-y-0 left-0 z-20 w-64 bg-field-card border-r border-[#3A2E2E]
+      `}>
+        <div className="p-6 border-b border-[#3A2E2E]">
+          <h1 className="text-xl font-bold text-field-gold flex items-center gap-2">
+            <HardHat className="w-6 h-6 text-field-gold" />
+            FieldTrack
+          </h1>
+        </div>
+
+        <div className="p-4 flex-1">
+          <div 
+            onClick={() => navigateTo('profile')}
+            className="flex items-center space-x-3 mb-6 p-3 bg-[#1A1515] hover:bg-[#251e1e] rounded-xl border border-[#3A2E2E] hover:border-field-gold/40 cursor-pointer transition-all group"
+            title="Click to view and edit profile"
+          >
+            <img src={currentUser.avatar} alt="User" className="w-10 h-10 rounded-full border-2 border-field-gold object-cover group-hover:scale-105 transition-transform" />
+            <div className="overflow-hidden flex-1">
+              <p className="text-sm font-semibold truncate text-white group-hover:text-field-gold transition-colors">
+                {currentUser.role === 'admin' ? `${currentUser.name} (Admin)` : currentUser.name}
+              </p>
+              <p className="text-xs text-field-gold uppercase tracking-wider text-[10px]">
+                {currentUser.role === 'admin' ? 'Admin Level' : 'Staff Member'}
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-gray-500 group-hover:text-field-gold transition-colors" />
+          </div>
+          
+          {/* Connectivity Status (Mock) */}
+          <div className="mb-6 px-1">
+             <button 
+               onClick={() => setIsOnline(!isOnline)}
+               className={`w-full flex items-center justify-between p-2 rounded-lg border text-xs font-bold transition-all ${isOnline ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-red-500/10 border-red-500/30 text-red-500'}`}
+             >
+                <div className="flex items-center gap-2">
+                   {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+                   {isOnline ? 'Online' : 'Offline Mode'}
+                </div>
+                {isSyncing && <RefreshCw size={14} className="animate-spin text-field-gold"/>}
+             </button>
+             {pendingSyncCount > 0 && (
+                <div className="mt-2 text-[10px] text-gray-500 flex justify-between">
+                   <span>Pending Sync:</span>
+                   <span className="text-field-gold font-bold">{pendingSyncCount} items</span>
+                </div>
+             )}
+          </div>
+
+          <nav className="space-y-1">
+            <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
+            <NavItem view="upload" icon={Camera} label="Capture Upload" />
+            <NavItem view="gallery" icon={ImageIcon} label="Photo Gallery" />
+            <NavItem view="followups" icon={CalendarCheck} label="Follow-ups" />
+            <NavItem view="pending" icon={AlertCircleIcon} label="Pending Review" badge={pendingCount > 0 ? pendingCount : undefined} />
+            {currentUser.role === 'admin' && (
+              <NavItem view="admin" icon={Users} label="Admin Panel" />
+            )}
+          </nav>
+        </div>
+
+        <div className="p-4 border-t border-[#3A2E2E]">
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center space-x-3 px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+          >
+            <LogOut size={20} />
+            <span className="font-medium">Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 md:ml-64 overflow-y-auto h-[calc(100vh-80px)] md:h-screen p-0 md:p-8 pb-24 md:pb-8">
+        <div className="max-w-5xl mx-auto">
+          {currentView === 'dashboard' && (
+            <DashboardView 
+              user={currentUser} 
+              photos={photos} 
+              followUps={followUps} 
+              onChangeView={navigateTo}
+              onToggleFollowUpStatus={toggleFollowUpStatus}
+            />
+          )}
+          {currentView === 'upload' && (
+            <div className="p-4 md:p-0">
+              <UploadView 
+                user={currentUser} 
+                onUpload={(p) => {
+                  // When uploading raw, set status to pending_sync if offline
+                  const finalPhoto = { ...p, syncStatus: (isOnline ? 'synced' : 'pending') as SyncStatus };
+                  addPhoto(finalPhoto);
+                  setTimeout(() => navigateTo('pending'), 1500);
+                }} 
+                onViewPending={() => navigateTo('pending')}
+              />
+            </div>
+          )}
+          {currentView === 'pending' && (
+             <div className="p-4 md:p-0">
+              <PendingReviewsView 
+                user={currentUser} 
+                photos={photos} 
+                isOnline={isOnline}
+                leadSources={leadSources}
+                personTypes={personTypes}
+                constructionStages={constructionStages}
+                onUpdatePhoto={updatePhoto}
+                onDeletePhoto={deletePhoto}
+                onAddFollowUp={addFollowUp}
+                onBack={() => navigateTo('dashboard')}
+              />
+            </div>
+          )}
+          {currentView === 'gallery' && (
+             <div className="p-4 md:p-0">
+              <GalleryView 
+                user={currentUser} 
+                photos={photos} 
+                initialDateFilter={viewParams.dateFilter}
+                onExport={handleExportData}
+                onBack={() => navigateTo('dashboard')}
+              />
+            </div>
+          )}
+          {currentView === 'followups' && (
+             <div className="p-4 md:p-0">
+               <FollowUpsView 
+                 user={currentUser}
+                 photos={photos}
+                 followUps={followUps}
+                 initialTab={viewParams.tab}
+                 onToggleStatus={toggleFollowUpStatus}
+                 onReschedule={handleRescheduleFollowUp}
+                 onBack={() => navigateTo('dashboard')}
+               />
+             </div>
+          )}
+          {currentView === 'admin' && currentUser.role === 'admin' && (
+             <div className="p-4 md:p-0">
+               <AdminPanelView 
+                 photos={photos} 
+                 followUps={followUps}
+                 leadSources={leadSources}
+                 onUpdateLeadSources={setLeadSources}
+                 personTypes={personTypes}
+                 onUpdatePersonTypes={setPersonTypes}
+                 constructionStages={constructionStages}
+                 onUpdateConstructionStages={setConstructionStages}
+                 onUpdatePhoto={updatePhoto}
+                 onDeletePhoto={deletePhoto}
+                 recycleBin={recycleBin}
+                 onRestoreFromRecycleBin={restoreFromRecycleBin}
+                 onPermanentlyDeleteFromRecycleBin={permanentlyDeleteFromRecycleBin}
+                 onEmptyRecycleBin={emptyRecycleBin}
+               />
+             </div>
+          )}
+          {/* Profile View */}
+          {currentView === 'profile' && (
+             <ProfileView 
+               user={currentUser}
+               onUpdateUser={handleUpdateUser}
+               onLogout={handleLogout}
+               onBack={() => navigateTo('dashboard')}
+             />
+          )}
+        </div>
+      </main>
+
+      {/* Mobile Bottom Navigation (Image 1 Style) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#1A1515] border-t border-[#3A2E2E] px-6 py-2 pb-6 flex justify-between items-center z-30">
+        <button 
+          onClick={() => navigateTo('gallery')}
+          className={`flex flex-col items-center gap-1 ${currentView === 'gallery' ? 'text-white' : 'text-gray-500'}`}
+        >
+          <div className={`p-2 rounded-xl ${currentView === 'gallery' ? 'bg-[#2D2424]' : ''}`}>
+             <ImageIcon size={24} />
+          </div>
+          <span className="text-[10px] font-medium">Gallery</span>
+        </button>
+
+        <button 
+          onClick={() => navigateTo('dashboard')} // Dashboard acts as Home
+          className={`flex flex-col items-center gap-1 ${currentView === 'dashboard' ? 'text-white' : 'text-gray-500'}`}
+        >
+           <div className={`p-2 rounded-xl ${currentView === 'dashboard' ? 'bg-[#2D2424]' : ''}`}>
+             <LayoutDashboard size={24} />
+          </div>
+          <span className="text-[10px] font-medium">Home</span>
+        </button>
+
+        {/* Floating Action Button for Upload */}
+        <button 
+           onClick={() => navigateTo('upload')}
+           className="relative -top-5"
+        >
+           <div className="w-16 h-16 rounded-full bg-field-gold text-[#1A1515] flex flex-col items-center justify-center shadow-[0_0_20px_rgba(217,144,38,0.4)] border-4 border-[#1A1515]">
+              <Camera size={28} />
+              <span className="text-[10px] font-bold mt-0.5">Upload</span>
+           </div>
+        </button>
+
+        <button 
+          onClick={() => navigateTo('pending')}
+          className={`flex flex-col items-center gap-1 ${currentView === 'pending' ? 'text-white' : 'text-gray-500'}`}
+        >
+          <div className="relative">
+             <div className={`p-2 rounded-xl ${currentView === 'pending' ? 'bg-[#2D2424]' : ''}`}>
+               <AlertCircleIcon size={24} />
+             </div>
+             {pendingCount > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-[#1A1515]"></span>}
+          </div>
+          <span className="text-[10px] font-medium">Pending</span>
+        </button>
+
+        <button 
+          onClick={() => navigateTo('profile')}
+          className={`flex flex-col items-center gap-1 ${currentView === 'profile' ? 'text-white' : 'text-gray-500'}`}
+        >
+           <div className={`p-2 rounded-xl ${currentView === 'profile' ? 'bg-[#2D2424]' : ''}`}>
+             <UserIcon size={24} />
+          </div>
+          <span className="text-[10px] font-medium">Profile</span>
+        </button>
+      </div>
+
+    </div>
+  );
+}
+
+// Helper icon component
+function AlertCircleIcon(props: any) {
+  return (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      width={props.size} height={props.size} 
+      viewBox="0 0 24 24" fill="none" 
+      stroke="currentColor" strokeWidth="2" 
+      strokeLinecap="round" strokeLinejoin="round" 
+      className={props.className}
+    >
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+  );
+}

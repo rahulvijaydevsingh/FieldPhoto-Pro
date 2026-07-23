@@ -1,0 +1,9 @@
+{
+  "name": "FieldPhoto Pro",
+  "description": "Field Documentation & Lead Management System with mandatory follow-up workflows and two-stage upload process.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
