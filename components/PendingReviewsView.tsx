@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { User, Photo, FollowUp } from '../types';
 import ReviewEditor from './ReviewEditor';
 import { MapPin, Clock, ArrowRight, ArrowLeft, Trash2, FileText, Bookmark } from 'lucide-react';
+import { getSafePhotoDate } from '../services/dateUtils';
 
 interface Props {
   user: User;
@@ -32,7 +33,7 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
         (p.staffMember && p.staffMember.toLowerCase() === userNameLower)
       );
     })
-    .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+    .sort((a, b) => getSafePhotoDate(b.captureDate, b.uploadDate).getTime() - getSafePhotoDate(a.captureDate, a.uploadDate).getTime());
 
   if (selectedPhoto) {
     return (

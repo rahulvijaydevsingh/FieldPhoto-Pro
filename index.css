@@ -1,0 +1,145 @@
+/* FieldPhoto Pro Theme Styles & High-Contrast Outdoor Sunlight Overrides */
+
+body {
+  background-color: #1A1515;
+  color: #EAEAEA;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* Custom Scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1A1515; 
+}
+::-webkit-scrollbar-thumb {
+  background: #4B3A3A; 
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6D5454; 
+}
+
+/* ========================================================= */
+/* LIGHT HIGH-CONTRAST MODE (Ideal for Indoor & Soft Light) */
+/* ========================================================= */
+.theme-light {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.theme-light body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.theme-light .bg-field-bg, 
+.theme-light .bg-\[\#1A1515\], 
+.theme-light .bg-\[\#120F0F\], 
+.theme-light .bg-\[\#151010\] {
+  background-color: #f1f5f9 !important;
+}
+
+.theme-light .bg-field-card, 
+.theme-light .bg-\[\#2D2424\], 
+.theme-light .bg-\[\#251E1E\],
+.theme-light .bg-\[\#221A1A\],
+.theme-light .bg-\[\#1E1818\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08) !important;
+}
+
+.theme-light .text-gray-400, 
+.theme-light .text-gray-500, 
+.theme-light .text-field-textMuted {
+  color: #334155 !important;
+  font-weight: 600 !important;
+}
+
+.theme-light .text-gray-200, 
+.theme-light .text-gray-300, 
+.theme-light .text-white {
+  color: #0f172a !important;
+}
+
+.theme-light .border-\[\#3A2E2E\],
+.theme-light .border-\[\#443535\],
+.theme-light .border-\[\#2D2424\] {
+  border-color: #e2e8f0 !important;
+}
+
+.theme-light input, 
+.theme-light select, 
+.theme-light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* =================================================================== */
+/* OUTDOOR SUNLIGHT HIGH-CONTRAST MODE (Maximum Outdoor Visibility)   */
+/* =================================================================== */
+.theme-high-contrast {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+.theme-high-contrast body {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+.theme-high-contrast .bg-field-bg, 
+.theme-high-contrast .bg-\[\#1A1515\], 
+.theme-high-contrast .bg-\[\#120F0F\], 
+.theme-high-contrast .bg-\[\#151010\] {
+  background-color: #f8fafc !important;
+}
+
+.theme-high-contrast .bg-field-card, 
+.theme-high-contrast .bg-\[\#2D2424\], 
+.theme-high-contrast .bg-\[\#251E1E\],
+.theme-high-contrast .bg-\[\#221A1A\],
+.theme-high-contrast .bg-\[\#1E1818\] {
+  background-color: #ffffff !important;
+  border: 2px solid #1e293b !important;
+  color: #000000 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.theme-high-contrast .text-gray-400, 
+.theme-high-contrast .text-gray-500, 
+.theme-high-contrast .text-field-textMuted {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+.theme-high-contrast .text-gray-200, 
+.theme-high-contrast .text-gray-300, 
+.theme-high-contrast .text-white {
+  color: #000000 !important;
+  font-weight: 700 !important;
+}
+
+.theme-high-contrast .border-\[\#3A2E2E\],
+.theme-high-contrast .border-\[\#443535\],
+.theme-high-contrast .border-\[\#2D2424\] {
+  border-color: #0f172a !important;
+}
+
+.theme-high-contrast input, 
+.theme-high-contrast select, 
+.theme-high-contrast textarea {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+  font-weight: 600 !important;
+}
+
+.theme-high-contrast button {
+  font-weight: 800 !important;
+}

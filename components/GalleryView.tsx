@@ -5,6 +5,7 @@ import {
   Copy, MoreVertical, RefreshCw, CheckSquare, Square, Check, Eye, MapPin, Phone, Mail, 
   User as UserIcon, Building, ExternalLink, FileText, Tag, Shield, Clock, HardHat, ArrowLeft
 } from 'lucide-react';
+import { getSafePhotoDate, formatSafePhotoDate, formatSafePhotoDateTime } from '../services/dateUtils';
 
 interface Props {
   user: User;
@@ -96,7 +97,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
       
       result = result.filter(p => {
-        const photoDate = new Date(p.captureDate).getTime();
+        const photoDate = getSafePhotoDate(p.captureDate, p.uploadDate).getTime();
         if (dateFilter === 'today') {
            return photoDate >= today;
         } else if (dateFilter === 'week') {
@@ -112,8 +113,8 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
 
     // 6. Sorting
     result.sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.captureDate).getTime() - new Date(a.captureDate).getTime();
-      if (sortBy === 'oldest') return new Date(a.captureDate).getTime() - new Date(b.captureDate).getTime();
+      if (sortBy === 'newest') return getSafePhotoDate(b.captureDate, b.uploadDate).getTime() - getSafePhotoDate(a.captureDate, a.uploadDate).getTime();
+      if (sortBy === 'oldest') return getSafePhotoDate(a.captureDate, a.uploadDate).getTime() - getSafePhotoDate(b.captureDate, b.uploadDate).getTime();
       if (sortBy === 'priority') {
          const pMap: Record<string, number> = { 'High': 3, 'Medium': 2, 'Low': 1 };
          return (pMap[b.priority || ''] || 0) - (pMap[a.priority || ''] || 0);
@@ -351,7 +352,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
                     <h3 className="text-sm font-bold text-white leading-tight truncate">{photo.siteName || 'Untitled Site'}</h3>
                     <p className="text-[10px] text-gray-300 truncate mt-0.5">{photo.leadSource ? `Source: ${photo.leadSource}` : 'Field Lead'}</p>
                     <p className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
-                      <span>{new Date(photo.captureDate).toLocaleDateString()}</span>
+                      <span>{formatSafePhotoDate(photo.captureDate, photo.uploadDate)}</span>
                       <span className="text-field-gold font-medium">{photo.staffMember || photo.uploaderName || 'Staff'}</span>
                     </p>
                   </div>
@@ -401,7 +402,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
                       <p className="text-xs text-gray-400 mt-0.5 truncate">{photo.notes ? `"${photo.notes}"` : 'No notes attached'}</p>
                     </div>
                     <div className="flex justify-between items-center text-[10px] text-gray-400 pt-1 border-t border-[#3A2E2E]/50 mt-1">
-                      <span>{new Date(photo.captureDate).toLocaleString()}</span>
+                      <span>{formatSafePhotoDateTime(photo.captureDate, photo.uploadDate)}</span>
                       <span className="text-field-gold font-medium">By: {photo.staffMember || photo.uploaderName || 'Staff'}</span>
                     </div>
                   </div>
@@ -580,7 +581,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
                 <div>
                   <span className="text-[10px] text-gray-400 uppercase font-semibold block">Capture Date</span>
                   <span className="text-sm font-medium text-gray-200 flex items-center gap-1 mt-0.5">
-                    <Clock size={14} /> {new Date(inspectPhoto.captureDate || inspectPhoto.uploadDate).toLocaleDateString()}
+                    <Clock size={14} /> {formatSafePhotoDate(inspectPhoto.captureDate, inspectPhoto.uploadDate)}
                   </span>
                 </div>
                 <div>

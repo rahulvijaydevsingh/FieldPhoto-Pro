@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { User, Photo, FollowUp } from '../types';
 import { Calendar, AlertTriangle, CheckCircle, Clock, Phone, Navigation, Bell, BarChart3, Cloud, Hourglass, X } from 'lucide-react';
+import { getSafePhotoDate } from '../services/dateUtils';
 
 interface Props {
   user: User;
@@ -38,7 +39,7 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
   
   const overdueFollowUps = myFollowUps.filter(f => f.status === 'overdue' || (f.status === 'pending' && new Date(f.date) < new Date(new Date().setHours(0,0,0,0)))).length;
   const uploadedToday = myPhotos.filter(p => {
-    const d = new Date(p.uploadDate);
+    const d = getSafePhotoDate(p.captureDate, p.uploadDate);
     const today = new Date();
     return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
   }).length;
@@ -295,7 +296,7 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
                      />
                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
                      <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded border border-white/20">
-                        {new Date(photo.captureDate || photo.uploadDate || Date.now()).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                        {getSafePhotoDate(photo.captureDate, photo.uploadDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                      </div>
                      <div className="absolute bottom-3 left-3 right-3">
                         <p className="text-white text-sm font-bold truncate">{photo.siteName || photo.fileName || 'Untitled Site'}</p>

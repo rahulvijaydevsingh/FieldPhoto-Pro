@@ -243,6 +243,84 @@ export default function ProfileView({ user, onUpdateUser, onLogout, onBack }: Pr
             </div>
           </div>
 
+          {/* Theme & Display Mode Preference Card */}
+          <div className="bg-[#2D2424] p-6 rounded-2xl border border-[#3A2E2E] shadow-xl space-y-4">
+            <h3 className="text-sm font-bold text-field-gold uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span>Display Theme & Outdoor Visibility</span>
+              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">Saved to Profile</span>
+            </h3>
+            <p className="text-xs text-gray-400">
+              Select your preferred color mode. Outdoor High-Contrast mode increases text sharpness and card borders for easy reading under direct sunlight in the field.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const updated: User = { ...user, themePreference: 'dark' };
+                  onUpdateUser(updated);
+                }}
+                className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                  (!user.themePreference || user.themePreference === 'dark')
+                    ? 'border-field-gold bg-[#1A1515] text-white shadow-lg ring-2 ring-field-gold/30'
+                    : 'border-[#3A2E2E] bg-[#1A1515]/50 text-gray-400 hover:border-gray-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider">Dark Theme</span>
+                  {(!user.themePreference || user.themePreference === 'dark') && (
+                    <Check size={16} className="text-field-gold" />
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-400">Default FieldOps dark theme for indoor use.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const updated: User = { ...user, themePreference: 'light' };
+                  onUpdateUser(updated);
+                }}
+                className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                  user.themePreference === 'light'
+                    ? 'border-field-gold bg-slate-100 text-slate-900 shadow-lg ring-2 ring-field-gold/30'
+                    : 'border-[#3A2E2E] bg-[#1A1515]/50 text-gray-400 hover:border-gray-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-900">Light Mode</span>
+                  {user.themePreference === 'light' && (
+                    <Check size={16} className="text-field-gold" />
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-600">High-clarity white background for bright environments.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const updated: User = { ...user, themePreference: 'high-contrast' };
+                  onUpdateUser(updated);
+                }}
+                className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                  user.themePreference === 'high-contrast'
+                    ? 'border-amber-500 bg-white text-black shadow-lg ring-2 ring-amber-500'
+                    : 'border-[#3A2E2E] bg-[#1A1515]/50 text-gray-400 hover:border-gray-500'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-black flex items-center gap-1">
+                    ☀️ Outdoor Sun
+                  </span>
+                  {user.themePreference === 'high-contrast' && (
+                    <Check size={16} className="text-amber-600" />
+                  )}
+                </div>
+                <p className="text-[10px] text-gray-800 font-semibold">Maximum contrast bold black text under direct sunlight.</p>
+              </button>
+            </div>
+          </div>
+
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 pt-2">
             <button

@@ -93,6 +93,8 @@ function removeItem(key: string): void {
   }
 }
 
+const SERVER_APP_VERSION = '2.5.0';
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() =>
     getSavedItem<User | null>(STORAGE_KEYS.USER, null)
@@ -103,6 +105,14 @@ export default function App() {
   const [viewParams, setViewParams] = useState<any>(() =>
     getSavedItem<any>(STORAGE_KEYS.VIEW_PARAMS, {})
   );
+
+  // App Version & Auto-Refresh State
+  const [appVersionNotice, setAppVersionNotice] = useState<string | null>(null);
+
+  // Nightly 11 PM Auto-Logout Notice State
+  const [nightlyLogoutNotice, setNightlyLogoutNotice] = useState<boolean>(() => {
+    return sessionStorage.getItem('auto_logout_11pm_notice') === 'true';
+  });
   
   // Login State
   const [loginEmail, setLoginEmail] = useState('');
@@ -276,6 +286,79 @@ export default function App() {
     };
   }, [currentUser]);
 
+  // 1. Server Version Check & Auto-Refresh System
+  useEffect(() => {
+    const checkServerVersion = () => {
+      const storedVersion = localStorage.getItem('fieldops_app_version');
+      if (!storedVersion) {
+        localStorage.setItem('fieldops_app_version', SERVER_APP_VERSION);
+      } else if (storedVersion !== SERVER_APP_VERSION) {
+        setAppVersionNotice(`New server update (v${SERVER_APP_VERSION}) deployed! Refreshing app to fetch latest version...`);
+        localStorage.setItem('fieldops_app_version', SERVER_APP_VERSION);
+        setTimeout(() => {
+          window.location.reload();
+        }, 2200);
+      }
+    };
+
+    checkServerVersion();
+    // Check every 20 minutes (1200000 ms)
+    const timer = setInterval(checkServerVersion, 20 * 60 * 1000);
+    window.addEventListener('focus', checkServerVersion);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', checkServerVersion);
+    };
+  }, []);
+
+  // 2. Automatic Daily Logout after 11:00 PM (23:00)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const check11pmCutoff = () => {
+      const now = new Date();
+      if (now.getHours() >= 23) {
+        sessionStorage.setItem('auto_logout_11pm_notice', 'true');
+        setNightlyLogoutNotice(true);
+        handleLogout();
+      }
+    };
+
+    check11pmCutoff();
+    const interval = setInterval(check11pmCutoff, 20000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
+
+  // 3. User Theme Preference Effect
+  useEffect(() => {
+    const theme = currentUser?.themePreference || 'dark';
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.className = 'theme-light';
+    } else if (theme === 'high-contrast') {
+      root.className = 'theme-high-contrast';
+    } else {
+      root.className = '';
+    }
+  }, [currentUser?.themePreference]);
+
+  // 4. Ensure lastLoginTime is set when session is active or restored
+  useEffect(() => {
+    if (currentUser) {
+      const nowStr = new Date().toISOString();
+      const todayStr = nowStr.split('T')[0];
+      const lastLoginDay = (currentUser.lastLoginTime || '').split('T')[0];
+
+      if (!currentUser.lastLoginTime || lastLoginDay !== todayStr) {
+        const updated = { ...currentUser, lastLoginTime: nowStr };
+        setCurrentUser(updated);
+        saveItem(STORAGE_KEYS.USER, updated);
+        saveTeamMemberToFirestore(updated);
+        updateTeamMemberInLocalList(updated);
+      }
+    }
+  }, [currentUser?.id]);
+
   // Sync to Local Storage
   useEffect(() => {
     if (currentUser) {
@@ -355,14 +438,16 @@ export default function App() {
         deviceInfo: getDeviceModelInfo()
       };
 
-      // Save route breadcrumb locally on device (0 cloud writes)
+      // Save route breadcrumb locally on device and shared store
       addLocalBreadcrumb({
         lat,
         lng,
         accuracy,
         timestamp: locationRecord.timestamp,
         plusCode,
-        deviceInfo: locationRecord.deviceInfo
+        deviceInfo: locationRecord.deviceInfo,
+        userId: currentUser.id,
+        userName: currentUser.name
       });
 
       setCurrentUser(prev => {
@@ -621,6 +706,38 @@ export default function App() {
       return updated;
     });
     savePhotoToFirestore(newPhoto);
+
+    // Update uploader's last location immediately with photo capture details
+    if (currentUser) {
+      const photoLoc: StaffLocation = {
+        lat: newPhoto.site_lat !== undefined ? newPhoto.site_lat : (newPhoto.gps?.lat || 30.9010),
+        lng: newPhoto.site_lng !== undefined ? newPhoto.site_lng : (newPhoto.gps?.lng || 75.8573),
+        accuracy: 8,
+        timestamp: newPhoto.captureDate || newPhoto.uploadDate || new Date().toISOString(),
+        address: newPhoto.siteName || 'Punjab Region',
+        plusCode: newPhoto.plusCode || 'Verified GPS',
+        isLive: true,
+        deviceInfo: newPhoto.deviceInfo || 'Android Mobile Phone'
+      };
+
+      addLocalBreadcrumb({
+        lat: photoLoc.lat,
+        lng: photoLoc.lng,
+        accuracy: 8,
+        timestamp: photoLoc.timestamp,
+        plusCode: photoLoc.plusCode,
+        deviceInfo: photoLoc.deviceInfo,
+        userId: currentUser.id,
+        userName: currentUser.name
+      });
+
+      const updatedUser = { ...currentUser, lastLocation: photoLoc };
+      setCurrentUser(updatedUser);
+      saveItem(STORAGE_KEYS.USER, updatedUser);
+      saveTeamMemberToFirestore(updatedUser);
+      updateTeamMemberInLocalList(updatedUser);
+    }
+
     if (!isOnline) {
        setSyncQueue(prev => [...prev, newPhoto.id]);
     }
@@ -748,8 +865,16 @@ export default function App() {
   const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0] && currentUser) {
         const url = URL.createObjectURL(e.target.files[0]);
-        setCurrentUser({ ...currentUser, avatar: url });
+        handleUpdateUser({ ...currentUser, avatar: url });
     }
+  };
+
+  const cycleTheme = () => {
+    if (!currentUser) return;
+    const currentTheme = currentUser.themePreference || 'dark';
+    const nextTheme: 'dark' | 'light' | 'high-contrast' = 
+      currentTheme === 'dark' ? 'light' : currentTheme === 'light' ? 'high-contrast' : 'dark';
+    handleUpdateUser({ ...currentUser, themePreference: nextTheme });
   };
 
   // Login Screen
@@ -767,7 +892,30 @@ export default function App() {
             </div>
             <h1 className="text-3xl font-bold text-white mb-2 tracking-wide">Field Ops Portal</h1>
             <p className="text-field-textMuted">Sign in to manage your site visits</p>
+            <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#2A2222] border border-[#3A2E2E] text-[10px] text-gray-400 font-mono">
+              <span>App Server v{SERVER_APP_VERSION}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            </div>
           </div>
+
+          {/* Version Update Refresh Banner */}
+          {appVersionNotice && (
+            <div className="mb-6 p-4 bg-field-gold/20 border border-field-gold/50 rounded-xl flex items-center gap-3 text-field-gold text-xs font-bold animate-bounce">
+              <RefreshCw size={18} className="animate-spin flex-shrink-0" />
+              <span>{appVersionNotice}</span>
+            </div>
+          )}
+
+          {/* Nightly 11 PM Auto-Logout Banner */}
+          {nightlyLogoutNotice && (
+            <div className="mb-6 p-4 bg-amber-500/15 border border-amber-500/40 rounded-xl flex items-start gap-3 text-amber-300 text-xs font-semibold animate-fade-in">
+              <Clock size={18} className="flex-shrink-0 mt-0.5 text-amber-400" />
+              <div>
+                <p className="font-bold text-amber-400 text-xs mb-0.5">Nightly Cutoff Completed (11:00 PM)</p>
+                <p className="text-[11px] text-amber-200/90">Staff session auto-logged out per daily 11 PM policy. Please sign in to resume your field work.</p>
+              </div>
+            </div>
+          )}
 
           {loginError && (
             <div className="mb-6 p-4 bg-red-500/15 border border-red-500/40 rounded-xl flex items-center gap-3 text-red-400 text-xs font-bold animate-fade-in">
@@ -927,6 +1075,20 @@ export default function App() {
              )}
           </div>
 
+          {/* Theme Mode Quick Switcher */}
+          <div className="mb-4 px-1">
+             <button 
+               onClick={cycleTheme}
+               className="w-full flex items-center justify-between p-2 rounded-lg border border-[#3A2E2E] bg-[#1A1515] hover:border-field-gold/40 text-xs font-bold transition-all text-gray-300"
+               title="Click to toggle theme mode anytime"
+             >
+                <span className="text-[10px] uppercase text-gray-500 tracking-wider">Display Theme:</span>
+                <span className="text-field-gold font-bold flex items-center gap-1.5">
+                  {currentUser.themePreference === 'light' ? '☀️ Light Mode' : currentUser.themePreference === 'high-contrast' ? '🔆 Outdoor Sun' : '🌙 Dark Mode'}
+                </span>
+             </button>
+          </div>
+
           <nav className="space-y-1">
             <NavItem view="dashboard" icon={LayoutDashboard} label="Dashboard" />
             <NavItem view="upload" icon={Camera} label="Capture Upload" />
@@ -949,6 +1111,23 @@ export default function App() {
           </button>
         </div>
       </aside>
+
+      {/* Mobile Top Header */}
+      <header className="md:hidden sticky top-0 z-30 bg-[#1A1515] border-b border-[#3A2E2E] px-4 py-3 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-2">
+          <HardHat size={22} className="text-field-gold" />
+          <span className="font-bold text-white text-base tracking-wide">FieldTrack</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={cycleTheme}
+            className="px-2.5 py-1 rounded-lg border border-[#3A2E2E] bg-[#2D2424] text-[11px] font-bold text-field-gold flex items-center gap-1"
+          >
+            {currentUser.themePreference === 'light' ? '☀️ Light' : currentUser.themePreference === 'high-contrast' ? '🔆 Sun Mode' : '🌙 Dark'}
+          </button>
+          <div className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-red-500'}`} title={isOnline ? 'Online' : 'Offline'}></div>
+        </div>
+      </header>
 
       {/* Main Content Area */}
       <main className="flex-1 md:ml-64 overflow-y-auto h-[calc(100vh-80px)] md:h-screen p-0 md:p-8 pb-24 md:pb-8">

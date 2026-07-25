@@ -3,7 +3,8 @@ import { Photo, FollowUp, User, RecycleItem, StaffLocation } from '../types';
 import { DEMO_ADMIN, DEMO_STAFF } from '../services/mockData';
 import { fetchTeamMembersDirectly } from '../services/firebase';
 import { getDeviceModelInfo, getCityNameAsync, generatePlusCodeWithCityAsync } from '../utils/locationUtils';
-import { getLocalRouteLog, addLocalBreadcrumb, RouteBreadcrumb } from '../utils/routeLogger';
+import { getLocalRouteLog, getSharedRouteLogs, addLocalBreadcrumb, RouteBreadcrumb } from '../utils/routeLogger';
+import { getSafePhotoDate, formatSafePhotoDate, formatSafePhotoDateTime } from '../services/dateUtils';
 import ReviewEditor from './ReviewEditor';
 import { Settings, Users, Database, FileText, Plus, Trash2, Tag, Hammer, Camera, Edit2, Check, X, Shield, UserCheck, RotateCcw, Search, Download, RefreshCw, MapPin, Calendar, Filter, Eye, Maximize2, Navigation, Radio, Zap, Info } from 'lucide-react';
 
@@ -228,35 +229,45 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
     let freshestLoc = m.lastLocation;
 
     // 1. Check if staff has uploaded photos with GPS location
-    if (!freshestLoc && photos && photos.length > 0) {
+    if (photos && photos.length > 0) {
       const userPhotos = photos.filter(p => 
         (p.uploaderId && p.uploaderId === m.id) || 
         (p.uploaderName && m.name && p.uploaderName.trim().toLowerCase() === m.name.trim().toLowerCase()) ||
         (m.email && p.uploaderName && p.uploaderName.toLowerCase().includes(m.email.split('@')[0].toLowerCase()))
       );
       if (userPhotos.length > 0) {
-        userPhotos.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+        userPhotos.sort((a, b) => {
+          const tA = new Date(a.captureDate || a.uploadDate).getTime();
+          const tB = new Date(b.captureDate || b.uploadDate).getTime();
+          return tB - tA;
+        });
         const latestP = userPhotos[0];
-        if (latestP.gps || latestP.site_lat) {
+        const pTime = new Date(latestP.captureDate || latestP.uploadDate).getTime();
+        const curTime = freshestLoc ? new Date(freshestLoc.timestamp).getTime() : 0;
+
+        if (pTime > curTime && (latestP.gps || latestP.site_lat)) {
           freshestLoc = {
             lat: latestP.gps ? latestP.gps.lat : (latestP.site_lat || 30.9010),
             lng: latestP.gps ? latestP.gps.lng : (latestP.site_lng || 75.8573),
             accuracy: 8,
-            timestamp: latestP.uploadDate || new Date().toISOString(),
+            timestamp: latestP.captureDate || latestP.uploadDate || new Date().toISOString(),
             address: latestP.siteName || 'Punjab Region',
             plusCode: latestP.plusCode || '8J52W724+8Q Ludhiana',
             isLive: true,
-            deviceInfo: latestP.deviceInfo || getDeviceModelInfo()
+            deviceInfo: latestP.deviceInfo || 'Android Mobile Phone'
           };
         }
       }
     }
 
-    // 2. Check local route logs
-    const logs = getLocalRouteLog();
+    // 2. Check shared route logs for this staff member
+    const logs = getSharedRouteLogs(m.id, m.name);
     if (logs && logs.length > 0) {
       const latestCrumb = logs[logs.length - 1];
-      if (!freshestLoc || new Date(latestCrumb.timestamp).getTime() > new Date(freshestLoc.timestamp).getTime()) {
+      const crumbTime = new Date(latestCrumb.timestamp).getTime();
+      const curTime = freshestLoc ? new Date(freshestLoc.timestamp).getTime() : 0;
+
+      if (crumbTime > curTime) {
         freshestLoc = {
           lat: latestCrumb.lat,
           lng: latestCrumb.lng,
@@ -265,12 +276,12 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
           address: latestCrumb.plusCode ? latestCrumb.plusCode.split(' ').slice(1).join(' ') : 'Punjab Region',
           plusCode: latestCrumb.plusCode,
           isLive: true,
-          deviceInfo: latestCrumb.deviceInfo || getDeviceModelInfo()
+          deviceInfo: latestCrumb.deviceInfo || 'Android Mobile Phone'
         };
       }
     }
 
-    // 3. Guaranteed baseline location fallback so EVERY staff member profile has 100% equal UI & live sync rights
+    // 3. Guaranteed baseline location fallback
     if (!freshestLoc) {
       freshestLoc = {
         lat: 30.9010,
@@ -280,11 +291,64 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
         address: 'Punjab Region (Ludhiana / Amritsar Zone)',
         plusCode: '8J52W724+8Q Ludhiana',
         isLive: true,
-        deviceInfo: getDeviceModelInfo()
+        deviceInfo: 'Android Mobile Phone'
       };
     }
 
+    // Clean up desktop user-agent leakage if staff member is being viewed on desktop admin
+    if (m.role === 'staff' && freshestLoc.deviceInfo && (freshestLoc.deviceInfo.includes('Windows') || freshestLoc.deviceInfo.includes('Mac'))) {
+      freshestLoc.deviceInfo = 'Android Mobile Phone';
+    }
+
     return { ...m, lastLocation: freshestLoc };
+  };
+
+  // Compute all route breadcrumb pings for a specific staff member (from shared pings + photo capture locations)
+  const getMemberBreadcrumbs = (m: User): RouteBreadcrumb[] => {
+    const sharedLogs = getSharedRouteLogs(m.id, m.name);
+    
+    // Find all photos uploaded by this staff member (e.g. Amanpreet)
+    const userPhotos = (photos || []).filter(p => 
+      (p.uploaderId && p.uploaderId === m.id) || 
+      (p.uploaderName && m.name && p.uploaderName.trim().toLowerCase() === m.name.trim().toLowerCase()) ||
+      (m.email && p.uploaderName && p.uploaderName.toLowerCase().includes(m.email.split('@')[0].toLowerCase()))
+    );
+
+    const photoCrumbs: RouteBreadcrumb[] = userPhotos.map(p => ({
+      lat: p.site_lat !== undefined ? p.site_lat : (p.gps?.lat || 30.9010),
+      lng: p.site_lng !== undefined ? p.site_lng : (p.gps?.lng || 75.8573),
+      accuracy: 8,
+      timestamp: p.captureDate || p.uploadDate || new Date().toISOString(),
+      plusCode: p.plusCode || '8J52W724+8Q Ludhiana',
+      deviceInfo: p.deviceInfo || getDeviceModelInfo(),
+      userId: m.id,
+      userName: m.name
+    }));
+
+    // Merge shared pings + photo capture locations
+    const map = new Map<string, RouteBreadcrumb>();
+    [...sharedLogs, ...photoCrumbs].forEach(crumb => {
+      const timeKey = `${new Date(crumb.timestamp).getTime()}_${crumb.lat.toFixed(4)}_${crumb.lng.toFixed(4)}`;
+      map.set(timeKey, crumb);
+    });
+
+    const result = Array.from(map.values()).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    
+    // If empty, provide at least 1 current baseline ping if freshest location exists
+    if (result.length === 0 && m.lastLocation) {
+      return [{
+        lat: m.lastLocation.lat,
+        lng: m.lastLocation.lng,
+        accuracy: m.lastLocation.accuracy || 10,
+        timestamp: m.lastLocation.timestamp || new Date().toISOString(),
+        plusCode: m.lastLocation.plusCode || '8J52W724+8Q Ludhiana',
+        deviceInfo: m.lastLocation.deviceInfo || getDeviceModelInfo(),
+        userId: m.id,
+        userName: m.name
+      }];
+    }
+
+    return result;
   };
 
   const triggerLiveGpsPing = () => {
@@ -381,7 +445,7 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
 
     const freshest = getFreshestMember(targetMember);
     setLocationModalMember(freshest);
-    setRouteLogs(getLocalRouteLog());
+    setRouteLogs(getMemberBreadcrumbs(freshest));
 
     // Ping device GPS immediately for real-time accuracy update
     triggerLiveGpsPing();
@@ -899,14 +963,16 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
                   <div className="pt-1">
                     <button
                       onClick={() => {
-                        const logs = getLocalRouteLog();
-                        setRouteLogs(logs);
+                        if (locationModalMember) {
+                          const logs = getMemberBreadcrumbs(locationModalMember);
+                          setRouteLogs(logs);
+                        }
                         setShowRouteLogs(!showRouteLogs);
                       }}
                       className="w-full py-2 bg-[#1A1515] hover:bg-[#251f1f] text-field-gold border border-field-gold/30 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-colors"
                     >
                       <Navigation size={14} />
-                      {showRouteLogs ? 'Hide Today\'s Day Route Log' : `🗺️ View Today's Local Route Breadcrumbs (${routeLogs.length || getLocalRouteLog().length} pings)`}
+                      {showRouteLogs ? 'Hide Today\'s Day Route Log' : `🗺️ View Today's Local Route Breadcrumbs (${(locationModalMember ? getMemberBreadcrumbs(locationModalMember) : routeLogs).length} pings)`}
                     </button>
                   </div>
 
@@ -1352,9 +1418,7 @@ function FieldTrackVisitsExplorer({
       status: p.status === 'completed' ? 'Completed' : p.status === 'in-progress' ? 'In Progress' : p.hasDraft ? 'Draft' : 'New Upload',
       lat: p.site_lat !== undefined ? p.site_lat : (p.gps?.lat || 30.901000),
       lng: p.site_lng !== undefined ? p.site_lng : (p.gps?.lng || 75.857300),
-      dateStr: new Date(p.uploadDate || p.captureDate || Date.now()).toLocaleString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
-      }),
+      dateStr: formatSafePhotoDateTime(p.captureDate, p.uploadDate),
       deviceInfo: `${devName} ${gpsTag}`,
       url: p.url || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
       originalPhoto: p
@@ -1873,7 +1937,7 @@ function FieldTrackVisitsExplorer({
               </div>
               <div>
                 <span className="text-gray-500 text-[10px] uppercase font-bold block">Captured Date & Time</span>
-                <span className="text-gray-200 font-medium block mt-0.5">{new Date(selectedTelemetryPhoto.captureDate || selectedTelemetryPhoto.uploadDate || Date.now()).toLocaleString()}</span>
+                <span className="text-gray-200 font-medium block mt-0.5">{formatSafePhotoDateTime(selectedTelemetryPhoto.captureDate, selectedTelemetryPhoto.uploadDate)}</span>
               </div>
               <div>
                 <span className="text-gray-500 text-[10px] uppercase font-bold block">Lead Source</span>

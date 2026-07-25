@@ -34,6 +34,7 @@ export interface User {
   lastLocation?: StaffLocation;
   lastLoginTime?: string;
   lastLogoutTime?: string;
+  themePreference?: 'dark' | 'light' | 'high-contrast';
 }
 
 export interface Professional {

@@ -4,6 +4,8 @@ import { User, Photo } from '../types';
 import { Camera, Image as ImageIcon, WifiOff, X, Pause, Play, Trash2, ArrowRight, MapPin } from 'lucide-react';
 import ExifReader from 'exifreader';
 import { generatePlusCodeWithCitySync, generatePlusCodeWithCityAsync, getDeviceModelInfo } from '../utils/locationUtils';
+import { addLocalBreadcrumb } from '../utils/routeLogger';
+import { isValidPhotoDate } from '../services/dateUtils';
 
 interface Props {
   user: User;
@@ -50,12 +52,13 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
     }
   }, []);
 
-  // Extract EXIF GPS and photo creation timestamp directly from photo metadata
+  // Extract EXIF GPS, device make/model, and photo creation timestamp directly from photo metadata
   const extractPhotoMeta = async (file: File, fallbackGps: { lat: number; lng: number }) => {
     try {
       const tags = await ExifReader.load(file, { expanded: true });
       let gps: { lat: number; lng: number } | undefined;
       let captureDate: string | undefined;
+      let deviceModel: string | undefined;
 
       if (tags.gps && typeof tags.gps.Latitude === 'number' && typeof tags.gps.Longitude === 'number') {
         const lat = tags.gps.Latitude;
@@ -65,36 +68,68 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
         }
       }
 
+      // Check Exif Tags for Camera Make & Model
+      const makeTag = tags.Make || tags.image?.Make || tags.exif?.Make;
+      const modelTag = tags.Model || tags.image?.Model || tags.exif?.Model;
+      const makeStr = makeTag?.description ? String(makeTag.description).trim() : '';
+      const modelStr = modelTag?.description ? String(modelTag.description).trim() : '';
+
+      if (modelStr) {
+        if (makeStr && !modelStr.toLowerCase().includes(makeStr.toLowerCase())) {
+          deviceModel = `${makeStr} ${modelStr}`;
+        } else {
+          deviceModel = modelStr;
+        }
+      } else if (makeStr) {
+        deviceModel = makeStr;
+      }
+
       if (tags.exif) {
         const dtTag = tags.exif.DateTimeOriginal || tags.exif.CreateDate || tags.exif.DateTime;
         if (dtTag && dtTag.description) {
-          const parts = dtTag.description.split(' ');
+          const parts = String(dtTag.description).trim().split(' ');
           if (parts.length === 2) {
             const datePart = parts[0].replace(/:/g, '-');
-            const timePart = parts[1];
-            const parsed = new Date(`${datePart}T${timePart}`);
-            if (!isNaN(parsed.getTime())) {
-              captureDate = parsed.toISOString();
+            const timeParts = parts[1].split(':');
+            if (timeParts.length === 3) {
+              const dateSplit = datePart.split('-');
+              const y = parseInt(dateSplit[0], 10);
+              const m = parseInt(dateSplit[1], 10);
+              const d = parseInt(dateSplit[2], 10);
+              const hh = parseInt(timeParts[0], 10);
+              const mm = parseInt(timeParts[1], 10);
+              const ss = parseInt(timeParts[2], 10);
+
+              if (!isNaN(y) && !isNaN(m) && !isNaN(d) && !isNaN(hh) && !isNaN(mm) && !isNaN(ss)) {
+                const parsed = new Date(y, m - 1, d, hh, mm, ss);
+                if (isValidPhotoDate(parsed)) {
+                  captureDate = parsed.toISOString();
+                }
+              }
             }
           }
         }
       }
 
-      if (gps) {
-        return {
-          gps,
-          captureDate: captureDate || (file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString()),
-          source: 'exif' as const
-        };
-      }
+      const validLastModified = (file.lastModified && isValidPhotoDate(file.lastModified)) ? new Date(file.lastModified).toISOString() : undefined;
+      const safeCaptureDate = captureDate || validLastModified || new Date().toISOString();
+
+      return {
+        gps: gps || fallbackGps,
+        captureDate: safeCaptureDate,
+        source: gps ? ('exif' as const) : ('device' as const),
+        deviceModel
+      };
     } catch (err) {
       console.log('ExifReader notice:', err);
     }
 
+    const validLastModified = (file.lastModified && isValidPhotoDate(file.lastModified)) ? new Date(file.lastModified).toISOString() : undefined;
     return {
       gps: fallbackGps,
-      captureDate: file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString(),
-      source: 'device' as const
+      captureDate: validLastModified || new Date().toISOString(),
+      source: 'device' as const,
+      deviceModel: undefined
     };
   };
 
@@ -216,7 +251,7 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
           const captureDateStr = meta.captureDate;
           const plusCodeStr = await generatePlusCodeWithCityAsync(finalGps.lat, finalGps.lng);
 
-          const capturedDevName = getDeviceModelInfo();
+          const capturedDevName = meta.deviceModel || getDeviceModelInfo();
 
           const newPhoto: Photo = {
             id: 'lead_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
@@ -238,6 +273,17 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
             locationSource: meta.source,
             deviceInfo: capturedDevName
           };
+          // Record route breadcrumb for staff member automatically
+          addLocalBreadcrumb({
+            lat: finalGps.lat,
+            lng: finalGps.lng,
+            timestamp: captureDateStr || new Date().toISOString(),
+            plusCode: plusCodeStr,
+            deviceInfo: capturedDevName,
+            userId: user.id,
+            userName: user.name
+          });
+
           onUpload(newPhoto);
         }, 300);
 
@@ -296,7 +342,10 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
           accept="image/*" 
           capture="environment"
           className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = '';
+          }}
         />
         <input 
           type="file" 
@@ -304,7 +353,10 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
           accept="image/*" 
           multiple
           className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
+          onChange={(e) => {
+            handleFiles(e.target.files);
+            e.target.value = '';
+          }}
         />
       </div>
 
