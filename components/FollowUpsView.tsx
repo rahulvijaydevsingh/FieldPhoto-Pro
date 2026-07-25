@@ -25,8 +25,21 @@ export default function FollowUpsView({ user, photos, followUps, initialTab, onT
     }
   }, [initialTab]);
 
-  // Permission filter
-  const myFollowUps = user.role === 'admin' ? followUps : followUps.filter(f => f.assignedToId === user.id);
+  // Permission filter & exclude follow-ups for deleted photos
+  const myFollowUps = (user.role === 'admin' 
+    ? followUps 
+    : followUps.filter(f => {
+        const uName = (user.name || '').toLowerCase();
+        return f.assignedToId === user.id ||
+               f.createdBy === user.name ||
+               (f.assignedStaff && f.assignedStaff.toLowerCase() === uName) ||
+               photos.some(p => p.id === f.photoId && (
+                 p.uploaderId === user.id || 
+                 (p.uploaderName && p.uploaderName.toLowerCase() === uName) || 
+                 (p.staffMember && p.staffMember.toLowerCase() === uName)
+               ));
+      })
+  ).filter(f => photos.some(p => p.id === f.photoId));
 
   // Date Logic
   const today = new Date();

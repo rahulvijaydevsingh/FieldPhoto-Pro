@@ -2,10 +2,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, Photo, FollowUp, Priority, MATERIAL_INTERESTS, PersonMet, Professional } from '../types';
 import { MOCK_PROFESSIONALS } from '../services/mockData';
+import { generatePlusCodeWithCitySync, generatePlusCodeWithCityAsync } from '../utils/locationUtils';
 import { 
   Save, X, User as UserIcon, Users, MapPin, AlertCircle, Phone, Trash2, 
   CheckSquare, Square, Mail, Briefcase, Info, ShieldAlert, WifiOff, Search, Check, Globe,
-  FileText, Bookmark, CheckCircle2
+  FileText, Bookmark, CheckCircle2, RefreshCw, AlertTriangle, Plus
 } from 'lucide-react';
 
 interface Props {
@@ -16,22 +17,17 @@ interface Props {
   personTypes: string[];
   constructionStages: string[];
   existingPhotos: Photo[]; 
+  teamMembers?: User[];
   onCancel: () => void;
   onDelete?: () => void;
   onSaveDraft?: (draftPhoto: Photo) => void;
   onSubmit: (photo: Photo, followUp: FollowUp) => void;
 }
 
-// Mock function to simulate Open Location Code (Plus Code) generation
-// In a real app, use the 'open-location-code' library
-const mockGeneratePlusCode = (lat: number, lng: number) => {
-  const latPart = Math.floor(Math.abs(lat) * 100) % 100;
-  const lngPart = Math.floor(Math.abs(lng) * 100) % 100;
-  return `8J${latPart}V${lngPart}+${Math.floor(Math.random() * 9)}X Ludhiana`;
-};
+
 
 export default function ReviewEditor({ 
-  photo, user, isOnline = true, leadSources, personTypes, constructionStages, existingPhotos, onCancel, onDelete, onSaveDraft, onSubmit 
+  photo, user, isOnline = true, leadSources, personTypes, constructionStages, existingPhotos, teamMembers = [], onCancel, onDelete, onSaveDraft, onSubmit 
 }: Props) {
   // Load initial draft if present
   const savedDraft = (() => {
@@ -41,6 +37,19 @@ export default function ReviewEditor({
     } catch (e) {
       return null;
     }
+  })();
+
+  // Resolve team members for Assign To dropdown
+  const activeTeamMembers = (() => {
+    if (teamMembers && teamMembers.length > 0) return teamMembers;
+    try {
+      const saved = localStorage.getItem('fieldops_team_members');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [user];
   })();
 
   // --- STATE MANAGEMENT ---
@@ -55,8 +64,18 @@ export default function ReviewEditor({
       : [{id: Math.random().toString(36).substr(2, 9), designation: 'Owner', name: '', phone: '', email: '', alternatePhone: '', firmName: ''}];
   });
 
-  // Group 2: Site Details
-  const [siteName, setSiteName] = useState(savedDraft?.siteName ?? photo.siteName ?? '');
+  // Group 2: Site Details - Clean up raw numeric camera filenames from site address input
+  const getInitialSiteName = (): string => {
+    if (savedDraft?.siteName !== undefined) return savedDraft.siteName;
+    const raw = photo.siteName || '';
+    const isCameraOrNumeric = /^(\d+|IMG_\d+.*|\d{8}_\d+.*|\d{10,}.*|P_\d+.*|Photo_\d+.*)$/i.test(raw.trim());
+    if (isCameraOrNumeric) {
+      return ''; // Leave empty so staff doesn't see random numbers in Site Address
+    }
+    return raw;
+  };
+
+  const [siteName, setSiteName] = useState(getInitialSiteName);
   const [constructionStage, setConstructionStage] = useState(savedDraft?.constructionStage ?? photo.constructionStage ?? constructionStages[0]);
   const [estimatedQuantity, setEstimatedQuantity] = useState(savedDraft?.estimatedQuantity ?? photo.estimatedQuantity ?? '');
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>(savedDraft?.materialInterests ?? photo.materialInterests ?? []);
@@ -92,8 +111,11 @@ export default function ReviewEditor({
         const lng = pos.coords.longitude;
         const formatted = formatGpsPrecision(lat, lng);
         setGpsString(formatted);
-        const code = mockGeneratePlusCode(lat, lng);
-        setPlusCode(code);
+        const syncCode = generatePlusCodeWithCitySync(lat, lng);
+        setPlusCode(syncCode);
+        generatePlusCodeWithCityAsync(lat, lng).then(asyncCode => {
+          if (asyncCode) setPlusCode(asyncCode);
+        });
         setIsFetchingGps(false);
       },
       (err) => {
@@ -104,8 +126,9 @@ export default function ReviewEditor({
     );
   };
 
-  // Group 3: Source & Relationship
-  const [leadSource, setLeadSource] = useState(savedDraft?.leadSource ?? photo.leadSource ?? 'Walk-in');
+  // Group 3: Source & Relationship - Default Lead Source to 'Field Visit'
+  const defaultLeadSource = leadSources.includes('Field Visit') ? 'Field Visit' : (leadSources[0] || 'Field Visit');
+  const [leadSource, setLeadSource] = useState(savedDraft?.leadSource ?? photo.leadSource ?? defaultLeadSource);
   const [customLeadSource, setCustomLeadSource] = useState(savedDraft?.customLeadSource ?? photo.customLeadSource ?? '');
   
   const [referredByProf, setReferredByProf] = useState<Professional | null>(
@@ -202,21 +225,25 @@ export default function ReviewEditor({
     }
   };
 
-  // Auto-generate Plus Code when GPS changes
+  // Auto-generate Plus Code with accurate city when GPS changes
   useEffect(() => {
-    if (gpsString && !plusCode) {
+    if (gpsString) {
       const parts = gpsString.split(',');
       if (parts.length === 2) {
         const lat = parseFloat(parts[0].trim());
         const lng = parseFloat(parts[1].trim());
         if (!isNaN(lat) && !isNaN(lng)) {
-          // In production, this would use OpenLocationCode.encode(lat, lng)
-          const code = mockGeneratePlusCode(lat, lng);
-          setPlusCode(code);
+          // Fast sync Plus code calculation
+          const syncCode = generatePlusCodeWithCitySync(lat, lng);
+          setPlusCode(syncCode);
+          // Async reverse geocode to verify exact city
+          generatePlusCodeWithCityAsync(lat, lng).then(asyncCode => {
+            if (asyncCode) setPlusCode(asyncCode);
+          });
         }
       }
     }
-  }, [gpsString, plusCode]);
+  }, [gpsString]);
 
   // Debounced Duplicate Check
   useEffect(() => {
@@ -236,13 +263,13 @@ export default function ReviewEditor({
 
   const validate = useCallback(() => {
     const newErrors: string[] = [];
-    if (!peopleMet[0].name) newErrors.push("Primary Contact: Name is required");
-    if (peopleMet[0].phone.length !== 10) newErrors.push("Primary Contact: 10-digit phone required");
+    if (!peopleMet[0]?.name) newErrors.push("Primary Contact: Name is required");
+    if (!peopleMet[0]?.phone || peopleMet[0].phone.length !== 10) newErrors.push("Primary Contact: 10-digit phone required");
     
     // Pro Checks
     peopleMet.forEach((p, idx) => {
-      const isPro = ['Architect', 'Builder', 'Contractor', 'Interior Designer'].includes(p.designation);
-      if (isPro && !p.firmName) newErrors.push(`Contact ${idx+1}: Firm Name required for ${p.designation}`);
+      const isFilled = p.name || p.phone || p.firmName;
+      if (idx > 0 && !isFilled) return; // Skip empty secondary contacts
     });
 
     if (!siteName) newErrors.push("Site Location: Address is required");
@@ -275,6 +302,9 @@ export default function ReviewEditor({
 
     const updatedPhoto: Photo = {
       ...photo,
+      uploaderId: photo.uploaderId || user.id,
+      uploaderName: photo.uploaderName || user.name,
+      staffMember: photo.staffMember || photo.uploaderName || user.name,
       status: finalStatus, 
       syncStatus: syncStatus as any,
       hasDraft: false,
@@ -383,7 +413,21 @@ export default function ReviewEditor({
             {sectionHeader("Step 1: Primary Contact", <UserIcon size={18} />)}
             <div className="space-y-6">
               {peopleMet.map((person, idx) => (
-                  <div key={person.id} className={`space-y-4 pt-4 first:pt-0 border-t border-[#3A2E2E] first:border-0`}>
+                  <div key={person.id || `contact_${idx}`} className={`space-y-4 pt-4 first:pt-0 border-t border-[#3A2E2E] first:border-0`}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold text-field-gold uppercase tracking-wider">
+                        {idx === 0 ? "Primary Contact" : `Contact #${idx + 1}`}
+                      </span>
+                      {idx > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPeopleMet(peopleMet.filter((_, pIdx) => pIdx !== idx))}
+                          className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                        >
+                          <Trash2 size={13} /> Remove Contact
+                        </button>
+                      )}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className={labelStyle}>Designation *</label>
@@ -544,8 +588,11 @@ export default function ReviewEditor({
                <div>
                   <label className={labelStyle}>Assign To</label>
                   <select className={inputStyle()} value={assignTo} onChange={e => setAssignTo(e.target.value)}>
-                     <option value={user.id}>{user.name} (Myself)</option>
-                     <option value="u3">Amit Singh</option>
+                     {activeTeamMembers.map(member => (
+                       <option key={member.id} value={member.id}>
+                         {member.name} {member.id === user.id ? '(Myself)' : `(${member.designation || member.role})`}
+                       </option>
+                     ))}
                   </select>
                </div>
             </div>

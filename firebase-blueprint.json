@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "photos": {
+      "title": "Photos",
+      "description": "Field leads and photos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "fileName": { "type": "string" },
+        "uploadDate": { "type": "string" },
+        "captureDate": { "type": "string" },
+        "uploaderId": { "type": "string" },
+        "uploaderName": { "type": "string" },
+        "status": { "type": "string" },
+        "siteName": { "type": "string" }
+      },
+      "required": ["id", "url"]
+    },
+    "team_members": {
+      "title": "Team Members",
+      "description": "Team users and staff",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["id", "email", "name", "role"]
+    },
+    "followups": {
+      "title": "Follow Ups",
+      "description": "Scheduled follow-up tasks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "photoId": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "photoId"]
+    },
+    "recycle_bin": {
+      "title": "Recycle Bin",
+      "description": "Deleted leads",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      },
+      "required": ["id"]
+    },
+    "app_settings": {
+      "title": "App Settings",
+      "description": "System dropdown choices and configurations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "leadSources": { "type": "array" },
+        "personTypes": { "type": "array" },
+        "constructionStages": { "type": "array" }
+      },
+      "required": ["id"]
+    }
+  }
+}

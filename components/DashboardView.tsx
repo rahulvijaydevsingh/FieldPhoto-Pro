@@ -15,8 +15,23 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
   const [showNotifications, setShowNotifications] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   
-  const myPhotos = user.role === 'admin' ? photos : photos.filter(p => p.uploaderId === user.id);
-  const myFollowUps = user.role === 'admin' ? followUps : followUps.filter(f => f.assignedToId === user.id);
+  const myPhotos = user.role === 'admin' 
+    ? photos 
+    : photos.filter(p => {
+        const uName = (user.name || '').toLowerCase();
+        return p.uploaderId === user.id ||
+               (p.uploaderName && p.uploaderName.toLowerCase() === uName) ||
+               (p.staffMember && p.staffMember.toLowerCase() === uName);
+      });
+
+  const myFollowUps = user.role === 'admin' 
+    ? followUps 
+    : followUps.filter(f => {
+        const uName = (user.name || '').toLowerCase();
+        return f.assignedToId === user.id ||
+               f.createdBy === user.name ||
+               (f.assignedStaff && f.assignedStaff.toLowerCase() === uName);
+      });
 
   // Updated status check
   const pendingReviews = myPhotos.filter(p => p.status === 'new').length;
@@ -29,9 +44,9 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
   }).length;
   const uploadedThisWeek = 45; // Mock data
 
-  // Only show top 3 on dashboard
+  // Only show top 3 valid follow-ups for existing photos on dashboard
   const visibleFollowUps = myFollowUps
-    .filter(f => f.status !== 'completed')
+    .filter(f => f.status !== 'completed' && photos.some(p => p.id === f.photoId))
     .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .slice(0, 3);
 

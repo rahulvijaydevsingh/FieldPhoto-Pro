@@ -18,6 +18,12 @@ export default function ProfileView({ user, onUpdateUser, onLogout, onBack }: Pr
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [customUrl, setCustomUrl] = useState('');
+
+  React.useEffect(() => {
+    setName(user.name);
+    setEmail(user.email);
+    setAvatar(user.avatar || DEFAULT_AVATAR);
+  }, [user]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 

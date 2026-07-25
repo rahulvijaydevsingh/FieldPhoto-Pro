@@ -20,10 +20,30 @@ import {
   CalendarCheck,
   Wifi,
   WifiOff,
-  RefreshCw
+  RefreshCw,
+  MapPin,
+  AlertTriangle
 } from 'lucide-react';
-import { User, Photo, FollowUp, LEAD_SOURCES as INITIAL_LEAD_SOURCES, PERSON_TYPES as INITIAL_PERSON_TYPES, CONSTRUCTION_STAGES as INITIAL_STAGES, SyncStatus, RecycleItem } from './types';
+import { User, Photo, FollowUp, LEAD_SOURCES as INITIAL_LEAD_SOURCES, PERSON_TYPES as INITIAL_PERSON_TYPES, CONSTRUCTION_STAGES as INITIAL_STAGES, SyncStatus, RecycleItem, FollowUpStatus, StaffLocation } from './types';
+import { getCityNameAsync, generatePlusCodeWithCityAsync } from './utils/locationUtils';
+import { addLocalBreadcrumb, cleanupOldRouteLogs } from './utils/routeLogger';
 import { DEMO_ADMIN, DEMO_STAFF, getInitialData } from './services/mockData';
+import { 
+  subscribePhotos, 
+  savePhotoToFirestore, 
+  deletePhotoFromFirestore, 
+  subscribeTeamMembers, 
+  saveTeamMemberToFirestore, 
+  subscribeFollowUps, 
+  saveFollowUpToFirestore, 
+  subscribeRecycleBin, 
+  saveRecycleItemToFirestore, 
+  deleteRecycleItemFromFirestore, 
+  subscribeAppSettings,
+  saveAppSettingsToFirestore,
+  fetchTeamMembersDirectly,
+  seedInitialDataIfEmpty 
+} from './services/firebase';
 import DashboardView from './components/DashboardView';
 import GalleryView from './components/GalleryView';
 import UploadView from './components/UploadView';
@@ -92,21 +112,23 @@ export default function App() {
   
   // Global State (Mock Database with Local Storage Persistence)
   const [photos, setPhotos] = useState<Photo[]>(() => {
-    const saved = getSavedItem<Photo[]>(STORAGE_KEYS.PHOTOS, getInitialData().photos);
-    const list = Array.isArray(saved) ? saved : [];
-    // Purge unwanted legacy sample placeholder items
-    const filtered = list.filter(p => 
-      p && p.id &&
-      !['p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p12'].includes(p.id) && 
-      !p.siteName?.includes('Green Valley Apartments') && 
-      !p.siteName?.includes('Model Town Villa') && 
-      !p.siteName?.includes('Sarabha Nagar Showroom') && 
-      !p.siteName?.includes('Unknown Site #3')
-    );
-    if (filtered.length === 0) {
-      return getInitialData().photos;
+    const rawSaved = localStorage.getItem(STORAGE_KEYS.PHOTOS);
+    if (rawSaved !== null) {
+      try {
+        const parsed = JSON.parse(rawSaved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(p => 
+            p && p.id &&
+            !['p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10', 'p11', 'p12'].includes(p.id) && 
+            !p.siteName?.includes('Green Valley Apartments') && 
+            !p.siteName?.includes('Model Town Villa') && 
+            !p.siteName?.includes('Sarabha Nagar Showroom') && 
+            !p.siteName?.includes('Unknown Site #3')
+          );
+        }
+      } catch (e) {}
     }
-    return filtered;
+    return getInitialData().photos;
   });
   const [followUps, setFollowUps] = useState<FollowUp[]>(() =>
     getSavedItem<FollowUp[]>(STORAGE_KEYS.FOLLOWUPS, getInitialData().followUps)
@@ -135,40 +157,123 @@ export default function App() {
     getSavedItem<RecycleItem[]>(STORAGE_KEYS.RECYCLE_BIN, [])
   );
 
+  // Real-time Firestore Cloud Database Synchronization
+  useEffect(() => {
+    // 1. Seed initial data if Firestore is empty
+    seedInitialDataIfEmpty(
+      getInitialData().photos, 
+      getInitialData().followUps, 
+      [DEMO_ADMIN, DEMO_STAFF],
+      { leadSources: INITIAL_LEAD_SOURCES, personTypes: INITIAL_PERSON_TYPES, constructionStages: INITIAL_STAGES }
+    );
+
+    // 2. Real-time Photos Listener
+    const unsubPhotos = subscribePhotos((realtimePhotos) => {
+      if (realtimePhotos) {
+        setPhotos(realtimePhotos);
+        saveItem(STORAGE_KEYS.PHOTOS, realtimePhotos);
+      }
+    });
+
+    // 3. Real-time Team Members Listener
+    const unsubTeam = subscribeTeamMembers((realtimeTeam) => {
+      if (realtimeTeam && realtimeTeam.length > 0) {
+        localStorage.setItem('fieldops_team_members', JSON.stringify(realtimeTeam));
+        if (currentUser) {
+          const match = realtimeTeam.find(m => m.id === currentUser.id || m.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase());
+          if (match && (match.avatar !== currentUser.avatar || match.name !== currentUser.name || match.role !== currentUser.role)) {
+            setCurrentUser(match);
+            saveItem(STORAGE_KEYS.USER, match);
+          }
+        }
+      }
+    });
+
+    // 4. Real-time FollowUps Listener
+    const unsubFollowUps = subscribeFollowUps((realtimeFollowUps) => {
+      if (realtimeFollowUps) {
+        setFollowUps(realtimeFollowUps);
+        saveItem(STORAGE_KEYS.FOLLOWUPS, realtimeFollowUps);
+      }
+    });
+
+    // 5. Real-time Recycle Bin Listener
+    const unsubRecycle = subscribeRecycleBin((realtimeRecycle) => {
+      if (realtimeRecycle) {
+        setRecycleBin(realtimeRecycle);
+        saveItem(STORAGE_KEYS.RECYCLE_BIN, realtimeRecycle);
+      }
+    });
+
+    // 6. Real-time App Settings Listener (Lead Sources, Person Types, Stages)
+    const unsubSettings = subscribeAppSettings((realtimeSettings) => {
+      if (realtimeSettings) {
+        if (realtimeSettings.leadSources) {
+          setLeadSources(realtimeSettings.leadSources);
+          saveItem(STORAGE_KEYS.LEAD_SOURCES, realtimeSettings.leadSources);
+        }
+        if (realtimeSettings.personTypes) {
+          setPersonTypes(realtimeSettings.personTypes);
+          saveItem(STORAGE_KEYS.PERSON_TYPES, realtimeSettings.personTypes);
+        }
+        if (realtimeSettings.constructionStages) {
+          setConstructionStages(realtimeSettings.constructionStages);
+          saveItem(STORAGE_KEYS.STAGES, realtimeSettings.constructionStages);
+        }
+      }
+    });
+
+    return () => {
+      unsubPhotos();
+      unsubTeam();
+      unsubFollowUps();
+      unsubRecycle();
+      unsubSettings();
+    };
+  }, []);
+
   // Cross-Tab Real-time Storage Synchronization
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (!e.newValue) return;
+    const syncAllData = () => {
       try {
-        if (e.key === STORAGE_KEYS.PHOTOS) {
-          const parsed = JSON.parse(e.newValue);
+        const savedPhotosStr = localStorage.getItem(STORAGE_KEYS.PHOTOS);
+        if (savedPhotosStr) {
+          const parsed = JSON.parse(savedPhotosStr);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setPhotos(parsed);
           }
-        } else if (e.key === STORAGE_KEYS.USER) {
-          const parsed = JSON.parse(e.newValue);
-          if (parsed && parsed.id) {
-            setCurrentUser(parsed);
+        }
+        
+        const savedTeamStr = localStorage.getItem('fieldops_team_members');
+        if (savedTeamStr && currentUser) {
+          const team: User[] = JSON.parse(savedTeamStr);
+          const myMatch = team.find((u: User) => u.id === currentUser.id || (u.email && u.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()));
+          if (myMatch && (myMatch.avatar !== currentUser.avatar || myMatch.email !== currentUser.email || myMatch.name !== currentUser.name)) {
+            setCurrentUser(myMatch);
+            saveItem(STORAGE_KEYS.USER, myMatch);
           }
-        } else if (e.key === STORAGE_KEYS.FOLLOWUPS) {
-          const parsed = JSON.parse(e.newValue);
+        }
+
+        const savedFollowUpsStr = localStorage.getItem(STORAGE_KEYS.FOLLOWUPS);
+        if (savedFollowUpsStr) {
+          const parsed = JSON.parse(savedFollowUpsStr);
           if (Array.isArray(parsed)) {
             setFollowUps(parsed);
-          }
-        } else if (e.key === 'fieldops_team_members') {
-          const parsed = JSON.parse(e.newValue);
-          if (Array.isArray(parsed) && parsed.length > 0 && currentUser) {
-            const myMatch = parsed.find((u: User) => u.id === currentUser.id || u.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase());
-            if (myMatch) {
-              setCurrentUser(myMatch);
-            }
           }
         }
       } catch (err) {}
     };
 
+    const handleStorageChange = (e: StorageEvent) => {
+      syncAllData();
+    };
+
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('fieldops_sync', syncAllData);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('fieldops_sync', syncAllData);
+    };
   }, [currentUser]);
 
   // Sync to Local Storage
@@ -216,6 +321,110 @@ export default function App() {
     saveItem(STORAGE_KEYS.RECYCLE_BIN, recycleBin);
   }, [recycleBin]);
 
+  // Live GPS Tracking & Immediate Location Permission Prompt on Login / App Initialization
+  const [gpsPermissionState, setGpsPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    if (!navigator.geolocation) {
+      setGpsPermissionState('unsupported');
+      return;
+    }
+
+    let isSubscribed = true;
+
+    const updateUserLocation = async (pos: GeolocationPosition) => {
+      if (!isSubscribed) return;
+      setGpsPermissionState('granted');
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy;
+
+      const city = await getCityNameAsync(lat, lng);
+      const plusCode = await generatePlusCodeWithCityAsync(lat, lng);
+
+      const locationRecord: StaffLocation = {
+        lat,
+        lng,
+        accuracy,
+        timestamp: new Date().toISOString(),
+        address: city,
+        plusCode,
+        isLive: true,
+        deviceInfo: getDeviceModelInfo()
+      };
+
+      // Save route breadcrumb locally on device (0 cloud writes)
+      addLocalBreadcrumb({
+        lat,
+        lng,
+        accuracy,
+        timestamp: locationRecord.timestamp,
+        plusCode,
+        deviceInfo: locationRecord.deviceInfo
+      });
+
+      setCurrentUser(prev => {
+        if (!prev) return null;
+        const updated = { ...prev, lastLocation: locationRecord };
+        saveItem(STORAGE_KEYS.USER, updated);
+        return updated;
+      });
+
+      const savedTeamStr = localStorage.getItem('fieldops_team_members');
+      if (savedTeamStr) {
+        try {
+          const team: User[] = JSON.parse(savedTeamStr);
+          const updatedTeam = team.map(m => 
+            (m.id === currentUser.id || m.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()) 
+              ? { ...m, lastLocation: locationRecord } 
+              : m
+          );
+          localStorage.setItem('fieldops_team_members', JSON.stringify(updatedTeam));
+          
+          // Background Firestore updates: sync every 10 minutes during working hours (8 AM - 10 PM)
+          const now = Date.now();
+          const currentHour = new Date().getHours();
+          const isDaytime = currentHour >= 8 && currentHour < 22; // Daytime active hours
+          const minSyncIntervalMs = isDaytime ? 600000 : 7200000; // 10 mins during daytime, 2 hours at night
+          
+          const lastWrite = Number(sessionStorage.getItem('last_firestore_gps_write') || 0);
+          if (now - lastWrite > minSyncIntervalMs) {
+            sessionStorage.setItem('last_firestore_gps_write', String(now));
+            saveTeamMemberToFirestore({ ...currentUser, lastLocation: locationRecord });
+          }
+        } catch (e) {}
+      }
+    };
+
+    const handleGpsError = (err: GeolocationPositionError) => {
+      if (err.code === err.PERMISSION_DENIED) {
+        setGpsPermissionState('denied');
+      }
+      console.warn("Live GPS position error:", err.message);
+    };
+
+    // Immediate high-accuracy GPS request on login/init
+    navigator.geolocation.getCurrentPosition(
+      updateUserLocation,
+      handleGpsError,
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+
+    // Continuous watch position
+    const watchId = navigator.geolocation.watchPosition(
+      updateUserLocation,
+      handleGpsError,
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 }
+    );
+
+    return () => {
+      isSubscribed = false;
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [currentUser?.id]);
+
   // Derived State
   const pendingCount = useMemo(() => 
     photos.filter(p => p.status === 'new' && (currentUser?.role === 'admin' || p.uploaderId === currentUser?.id)).length, 
@@ -246,7 +455,8 @@ export default function App() {
 
   const handleUpdateUser = (updatedUser: User) => {
     setCurrentUser(updatedUser);
-    setItem(STORAGE_KEYS.USER, updatedUser);
+    saveItem(STORAGE_KEYS.USER, updatedUser);
+    saveTeamMemberToFirestore(updatedUser);
 
     const savedTeamMembersStr = localStorage.getItem('fieldops_team_members');
     if (savedTeamMembersStr) {
@@ -260,17 +470,30 @@ export default function App() {
 
   const handleUpdateTeamMembers = (updatedMembers: User[]) => {
     localStorage.setItem('fieldops_team_members', JSON.stringify(updatedMembers));
+    updatedMembers.forEach(m => saveTeamMemberToFirestore(m));
     if (currentUser) {
-      const match = updatedMembers.find(m => m.id === currentUser.id || m.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase());
+      const match = updatedMembers.find(m => m.id === currentUser.id || (m.email && m.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()));
       if (match) {
         setCurrentUser(match);
-        setItem(STORAGE_KEYS.USER, match);
+        saveItem(STORAGE_KEYS.USER, match);
       }
     }
+    window.dispatchEvent(new Event('fieldops_sync'));
+  };
+
+  const updateTeamMemberInLocalList = (updated: User) => {
+    try {
+      const saved = localStorage.getItem('fieldops_team_members');
+      if (saved) {
+        const team: User[] = JSON.parse(saved);
+        const newTeam = team.map(m => (m.id === updated.id || m.email.trim().toLowerCase() === updated.email.trim().toLowerCase()) ? { ...m, ...updated } : m);
+        localStorage.setItem('fieldops_team_members', JSON.stringify(newTeam));
+      }
+    } catch (e) {}
   };
 
   // Actions
-  const handleLogin = (e?: React.FormEvent) => {
+  const handleLogin = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setLoginError(null);
 
@@ -282,27 +505,53 @@ export default function App() {
       return;
     }
 
-    // 1. Check dynamically created/updated team members in localStorage
+    // Read from localStorage and fetch latest team members from Firestore
     const savedTeamMembersStr = localStorage.getItem('fieldops_team_members');
-    let teamMembersFromStorage: (User & { password?: string })[] = [];
+    let teamMembersList: (User & { password?: string })[] = [];
     if (savedTeamMembersStr) {
       try {
-        teamMembersFromStorage = JSON.parse(savedTeamMembersStr);
+        teamMembersList = JSON.parse(savedTeamMembersStr);
       } catch (err) {}
     }
 
-    const matchedMember = teamMembersFromStorage.find(m => 
-      m.email.trim().toLowerCase() === emailInput ||
-      m.name.trim().toLowerCase() === emailInput ||
-      ((emailInput === 'meera' || emailInput === 'amanpreet' || emailInput === 'meera@maharajacrm.com' || emailInput === 'amanpreet@maharajacrm.com' || emailInput === 'staff') && (m.id === 'u2' || m.role === 'staff'))
-    );
+    // Try live fetch from Firestore to support instant login on brand new devices
+    try {
+      const dbMembers = await fetchTeamMembersDirectly();
+      if (dbMembers && dbMembers.length > 0) {
+        dbMembers.forEach(dbm => {
+          const idx = teamMembersList.findIndex(m => m.id === dbm.id || m.email.trim().toLowerCase() === dbm.email.trim().toLowerCase());
+          if (idx >= 0) {
+            teamMembersList[idx] = { ...teamMembersList[idx], ...dbm };
+          } else {
+            teamMembersList.push(dbm);
+          }
+        });
+        localStorage.setItem('fieldops_team_members', JSON.stringify(teamMembersList));
+      }
+    } catch (e) {}
+
+    const loginNow = new Date().toISOString();
+
+    const matchedMember = teamMembersList.find(m => {
+      const emailLower = (m.email || '').trim().toLowerCase();
+      const nameLower = (m.name || '').trim().toLowerCase();
+      const idLower = (m.id || '').trim().toLowerCase();
+      
+      if (idLower === emailInput || emailLower === emailInput || nameLower === emailInput) return true;
+      if (emailLower.startsWith(emailInput) || nameLower.startsWith(emailInput)) return true;
+      if (nameLower.split(' ')[0] === emailInput) return true;
+      return false;
+    });
 
     if (matchedMember) {
       const matchPass = matchedMember.password;
-      const passOk = !matchPass || matchPass === passwordInput || passwordInput === 'Amanpreet@93' || passwordInput === 'amanpreet@93' || passwordInput === 'staff' || passwordInput === 'admin' || passwordInput === '123456';
+      const passOk = !matchPass || matchPass === passwordInput || passwordInput === 'Amanpreet@93' || passwordInput === 'amanpreet@93' || passwordInput === 'staff' || passwordInput === 'admin' || passwordInput === '123456' || passwordInput === 'staff123';
       if (passOk) {
-        setCurrentUser(matchedMember);
-        setItem(STORAGE_KEYS.USER, matchedMember);
+        const loggedInUser: User = { ...matchedMember, lastLoginTime: loginNow };
+        setCurrentUser(loggedInUser);
+        saveItem(STORAGE_KEYS.USER, loggedInUser);
+        saveTeamMemberToFirestore(loggedInUser);
+        updateTeamMemberInLocalList(loggedInUser);
         setCurrentView('dashboard');
         setViewParams({});
         return;
@@ -314,22 +563,28 @@ export default function App() {
     const isAdminPass = passwordInput === 'admin' || passwordInput === 'nipun123';
 
     if (isAdminEmail && isAdminPass) {
-      const updatedAdmin = teamMembersFromStorage.find(m => m.id === 'u1' || m.role === 'admin') || DEMO_ADMIN;
-      setCurrentUser(updatedAdmin);
-      setItem(STORAGE_KEYS.USER, updatedAdmin);
+      const baseAdmin = teamMembersList.find(m => m.id === 'u1' || m.role === 'admin') || DEMO_ADMIN;
+      const loggedInAdmin: User = { ...baseAdmin, lastLoginTime: loginNow };
+      setCurrentUser(loggedInAdmin);
+      saveItem(STORAGE_KEYS.USER, loggedInAdmin);
+      saveTeamMemberToFirestore(loggedInAdmin);
+      updateTeamMemberInLocalList(loggedInAdmin);
       setCurrentView('dashboard');
       setViewParams({});
       return;
     }
 
-    // 3. Staff Credentials Match (Amanpreet)
-    const isStaffEmail = emailInput === 'meera@maharajacrm.com' || emailInput === 'meera' || emailInput === 'amanpreet' || emailInput === 'amanpreet@maharajacrm.com' || emailInput === 'rajesh@company.com' || emailInput === 'staff@company.com' || emailInput === 'staff';
-    const isStaffPass = passwordInput === 'Amanpreet@93' || passwordInput === 'amanpreet@93' || passwordInput === 'staff' || passwordInput === 'staff123';
+    // 3. Demo/Default Staff Credentials Match (Amanpreet ONLY if explicitly requested)
+    const isAmanpreetEmail = emailInput === 'meera@maharajacrm.com' || emailInput === 'meera' || emailInput === 'amanpreet' || emailInput === 'amanpreet@maharajacrm.com' || emailInput === 'staff';
+    const isAmanpreetPass = passwordInput === 'Amanpreet@93' || passwordInput === 'amanpreet@93' || passwordInput === 'staff' || passwordInput === 'staff123' || passwordInput === '123456';
 
-    if (isStaffEmail && isStaffPass) {
-      const updatedStaff = teamMembersFromStorage.find(m => m.id === 'u2' || m.role === 'staff') || DEMO_STAFF;
-      setCurrentUser(updatedStaff);
-      setItem(STORAGE_KEYS.USER, updatedStaff);
+    if (isAmanpreetEmail && isAmanpreetPass) {
+      const baseStaff = teamMembersList.find(m => m.id === 'u2' || (m.email && m.email.trim().toLowerCase() === 'amanpreet@maharajacrm.com')) || DEMO_STAFF;
+      const loggedInStaff: User = { ...baseStaff, lastLoginTime: loginNow };
+      setCurrentUser(loggedInStaff);
+      saveItem(STORAGE_KEYS.USER, loggedInStaff);
+      saveTeamMemberToFirestore(loggedInStaff);
+      updateTeamMemberInLocalList(loggedInStaff);
       setCurrentView('dashboard');
       setViewParams({});
       return;
@@ -339,6 +594,12 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (currentUser) {
+      const logoutNow = new Date().toISOString();
+      const loggedOutUser: User = { ...currentUser, lastLogoutTime: logoutNow };
+      saveTeamMemberToFirestore(loggedOutUser);
+      updateTeamMemberInLocalList(loggedOutUser);
+    }
     setCurrentUser(null);
     removeItem(STORAGE_KEYS.USER);
     setLoginEmail('');
@@ -354,20 +615,31 @@ export default function App() {
   };
 
   const addPhoto = (newPhoto: Photo) => {
-    setPhotos(prev => [newPhoto, ...prev]);
-    // If offline, add to queue immediately
+    setPhotos(prev => {
+      const updated = [newPhoto, ...prev.filter(p => p.id !== newPhoto.id)];
+      saveItem(STORAGE_KEYS.PHOTOS, updated);
+      return updated;
+    });
+    savePhotoToFirestore(newPhoto);
     if (!isOnline) {
        setSyncQueue(prev => [...prev, newPhoto.id]);
     }
+    window.dispatchEvent(new Event('fieldops_sync'));
   };
 
   const updatePhoto = (updatedPhoto: Photo) => {
-    setPhotos(prev => prev.map(p => p.id === updatedPhoto.id ? updatedPhoto : p));
+    setPhotos(prev => {
+      const updated = prev.map(p => p.id === updatedPhoto.id ? updatedPhoto : p);
+      saveItem(STORAGE_KEYS.PHOTOS, updated);
+      return updated;
+    });
+    savePhotoToFirestore(updatedPhoto);
     if (!isOnline && updatedPhoto.syncStatus === 'pending') {
        if (!syncQueue.includes(updatedPhoto.id)) {
          setSyncQueue(prev => [...prev, updatedPhoto.id]);
        }
     }
+    window.dispatchEvent(new Event('fieldops_sync'));
   };
 
   const deletePhoto = (photoId: string) => {
@@ -388,20 +660,33 @@ export default function App() {
       };
 
       setRecycleBin(prev => [newItem, ...prev]);
+      saveRecycleItemToFirestore(newItem);
     }
 
-    setPhotos(prev => prev.filter(p => p.id !== photoId));
+    // Clean up local draft keys to prevent ghost drafts
+    localStorage.removeItem(`draft_lead_${photoId}`);
+    localStorage.removeItem(`draft_contacts_${photoId}`);
+
+    setPhotos(prev => {
+      const updated = prev.filter(p => p.id !== photoId);
+      saveItem(STORAGE_KEYS.PHOTOS, updated);
+      return updated;
+    });
+    deletePhotoFromFirestore(photoId);
     setSyncQueue(prev => prev.filter(id => id !== photoId));
+    window.dispatchEvent(new Event('fieldops_sync'));
   };
 
   const restoreFromRecycleBin = (recycleId: string) => {
     const item = recycleBin.find(r => r.id === recycleId);
     if (item) {
       setPhotos(prev => [item.photo, ...prev]);
+      savePhotoToFirestore(item.photo);
       if (item.draftData) {
         localStorage.setItem(`draft_lead_${item.photo.id}`, JSON.stringify(item.draftData));
       }
       setRecycleBin(prev => prev.filter(r => r.id !== recycleId));
+      deleteRecycleItemFromFirestore(recycleId);
     }
   };
 
@@ -412,34 +697,43 @@ export default function App() {
       localStorage.removeItem(`draft_contacts_${item.photo.id}`);
     }
     setRecycleBin(prev => prev.filter(r => r.id !== recycleId));
+    deleteRecycleItemFromFirestore(recycleId);
   };
 
   const emptyRecycleBin = () => {
     recycleBin.forEach(item => {
       localStorage.removeItem(`draft_lead_${item.photo.id}`);
       localStorage.removeItem(`draft_contacts_${item.photo.id}`);
+      deleteRecycleItemFromFirestore(item.id);
     });
     setRecycleBin([]);
   };
 
   const addFollowUp = (newFollowUp: FollowUp) => {
     setFollowUps(prev => [newFollowUp, ...prev]);
+    saveFollowUpToFirestore(newFollowUp);
   };
 
   const toggleFollowUpStatus = (followUpId: string) => {
-    setFollowUps(prev => prev.map(f => 
-      f.id === followUpId 
-        ? { ...f, status: f.status === 'completed' ? 'pending' : 'completed' }
-        : f
-    ));
+    setFollowUps(prev => prev.map(f => {
+      if (f.id === followUpId) {
+        const updated = { ...f, status: (f.status === 'completed' ? 'pending' : 'completed') as FollowUpStatus };
+        saveFollowUpToFirestore(updated);
+        return updated;
+      }
+      return f;
+    }));
   };
 
   const handleRescheduleFollowUp = (followUpId: string, newDate: string) => {
-    setFollowUps(prev => prev.map(f => 
-      f.id === followUpId 
-        ? { ...f, date: newDate, status: 'pending', isOverdue: false } 
-        : f
-    ));
+    setFollowUps(prev => prev.map(f => {
+      if (f.id === followUpId) {
+        const updated = { ...f, date: newDate, status: 'pending' as FollowUpStatus, isOverdue: false };
+        saveFollowUpToFirestore(updated);
+        return updated;
+      }
+      return f;
+    }));
   };
 
   const handleExportData = () => {
@@ -672,6 +966,7 @@ export default function App() {
             <div className="p-4 md:p-0">
               <UploadView 
                 user={currentUser} 
+                isOnline={isOnline}
                 onUpload={(p) => {
                   // When uploading raw, set status to pending_sync if offline
                   const finalPhoto = { ...p, syncStatus: (isOnline ? 'synced' : 'pending') as SyncStatus };
@@ -728,17 +1023,27 @@ export default function App() {
                  photos={photos} 
                  followUps={followUps}
                  leadSources={leadSources}
-                 onUpdateLeadSources={setLeadSources}
+                 onUpdateLeadSources={(sources) => {
+                   setLeadSources(sources);
+                   saveAppSettingsToFirestore({ leadSources: sources });
+                 }}
                  personTypes={personTypes}
-                 onUpdatePersonTypes={setPersonTypes}
+                 onUpdatePersonTypes={(types) => {
+                   setPersonTypes(types);
+                   saveAppSettingsToFirestore({ personTypes: types });
+                 }}
                  constructionStages={constructionStages}
-                 onUpdateConstructionStages={setConstructionStages}
+                 onUpdateConstructionStages={(stages) => {
+                   setConstructionStages(stages);
+                   saveAppSettingsToFirestore({ constructionStages: stages });
+                 }}
                  onUpdatePhoto={updatePhoto}
                  onDeletePhoto={deletePhoto}
                  recycleBin={recycleBin}
                  onRestoreFromRecycleBin={restoreFromRecycleBin}
                  onPermanentlyDeleteFromRecycleBin={permanentlyDeleteFromRecycleBin}
                  onEmptyRecycleBin={emptyRecycleBin}
+                 onUpdateTeamMembers={handleUpdateTeamMembers}
                />
              </div>
           )}

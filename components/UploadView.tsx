@@ -1,21 +1,184 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, Photo } from '../types';
-import { Camera, Image as ImageIcon, WifiOff, X, Pause, Play, Trash2, ArrowRight } from 'lucide-react';
+import { Camera, Image as ImageIcon, WifiOff, X, Pause, Play, Trash2, ArrowRight, MapPin } from 'lucide-react';
+import ExifReader from 'exifreader';
+import { generatePlusCodeWithCitySync, generatePlusCodeWithCityAsync, getDeviceModelInfo } from '../utils/locationUtils';
 
 interface Props {
   user: User;
+  isOnline?: boolean;
   onUpload: (photo: Photo) => void;
   onViewPending: () => void;
 }
 
-export default function UploadView({ user, onUpload, onViewPending }: Props) {
+export default function UploadView({ user, isOnline, onUpload, onViewPending }: Props) {
   const [uploads, setUploads] = useState<{id: string, name: string, progress: number, status: 'uploading' | 'waiting' | 'done', url: string}[]>([]);
+  const [onlineState, setOnlineState] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setOnlineState(true);
+    const handleOffline = () => setOnlineState(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const activeOnline = isOnline !== undefined ? isOnline : onlineState;
+  const initialGps = user.lastLocation 
+    ? { lat: user.lastLocation.lat, lng: user.lastLocation.lng } 
+    : { lat: 30.6782, lng: 76.7291 };
+  const [cachedGps, setCachedGps] = useState<{ lat: number; lng: number }>(initialGps);
+  const [gpsReady, setGpsReady] = useState<boolean>(false);
+
+  // Warmup live device GPS on component load so camera captures have high accuracy immediately
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setCachedGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setGpsReady(true);
+        },
+        (err) => {
+          console.log('GPS warmup:', err);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+  }, []);
+
+  // Extract EXIF GPS and photo creation timestamp directly from photo metadata
+  const extractPhotoMeta = async (file: File, fallbackGps: { lat: number; lng: number }) => {
+    try {
+      const tags = await ExifReader.load(file, { expanded: true });
+      let gps: { lat: number; lng: number } | undefined;
+      let captureDate: string | undefined;
+
+      if (tags.gps && typeof tags.gps.Latitude === 'number' && typeof tags.gps.Longitude === 'number') {
+        const lat = tags.gps.Latitude;
+        const lng = tags.gps.Longitude;
+        if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+          gps = { lat, lng };
+        }
+      }
+
+      if (tags.exif) {
+        const dtTag = tags.exif.DateTimeOriginal || tags.exif.CreateDate || tags.exif.DateTime;
+        if (dtTag && dtTag.description) {
+          const parts = dtTag.description.split(' ');
+          if (parts.length === 2) {
+            const datePart = parts[0].replace(/:/g, '-');
+            const timePart = parts[1];
+            const parsed = new Date(`${datePart}T${timePart}`);
+            if (!isNaN(parsed.getTime())) {
+              captureDate = parsed.toISOString();
+            }
+          }
+        }
+      }
+
+      if (gps) {
+        return {
+          gps,
+          captureDate: captureDate || (file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString()),
+          source: 'exif' as const
+        };
+      }
+    } catch (err) {
+      console.log('ExifReader notice:', err);
+    }
+
+    return {
+      gps: fallbackGps,
+      captureDate: file.lastModified ? new Date(file.lastModified).toISOString() : new Date().toISOString(),
+      source: 'device' as const
+    };
+  };
+
+  // Helper to compress camera/gallery images into web-optimized JPEG data URL
+  const compressImageFile = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxWidth = 1200;
+          const maxHeight = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth || height > maxHeight) {
+            if (width > height) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            } else {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            resolve(compressedDataUrl);
+          } else {
+            resolve((e.target?.result as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop');
+          }
+        };
+        img.onerror = () => resolve((e.target?.result as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop');
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve('https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop');
+      reader.readAsDataURL(file);
+    });
+  };
+
+
+
+  // Helper to determine clean site address from raw filename
+  const getCleanSiteName = (filename: string): string => {
+    const base = filename.replace(/\.[^/.]+$/, "").trim();
+    // Check if filename is purely numeric, camera format (e.g. IMG_20260724_102030, 20260724_102030, 1721815020)
+    const isCameraOrNumeric = /^(\d+|IMG_\d+.*|\d{8}_\d+.*|\d{10,}.*|P_\d+.*|Photo_\d+.*)$/i.test(base);
+    if (isCameraOrNumeric) {
+      return ''; // Leave blank so staff can enter actual address without clearing random digits
+    }
+    return base;
+  };
 
   // Simulate file handling
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
+    // Default to tracked user location or cached GPS (Mohali baseline)
+    let currentGps = user.lastLocation 
+      ? { lat: user.lastLocation.lat, lng: user.lastLocation.lng } 
+      : cachedGps;
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          currentGps = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          processFiles(files, currentGps);
+        },
+        () => {
+          processFiles(files, currentGps);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    } else {
+      processFiles(files, currentGps);
+    }
+  };
+
+  const processFiles = (files: FileList, gpsCoords: { lat: number, lng: number }) => {
     const newUploads = Array.from(files).map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
@@ -27,16 +190,15 @@ export default function UploadView({ user, onUpload, onViewPending }: Props) {
 
     setUploads(prev => [...newUploads, ...prev]);
 
-    // Start simulating upload for each
     newUploads.forEach(upload => {
-      simulateUpload(upload.id, upload.file);
+      simulateUpload(upload.id, upload.file, gpsCoords);
     });
   };
 
-  const simulateUpload = (id: string, file: File) => {
+  const simulateUpload = (id: string, file: File, gpsCoords: { lat: number, lng: number }) => {
     let progress = 0;
     const interval = setInterval(() => {
-      progress += Math.random() * 15;
+      progress += Math.random() * 25;
       if (progress >= 100) {
         progress = 100;
         clearInterval(interval);
@@ -44,38 +206,45 @@ export default function UploadView({ user, onUpload, onViewPending }: Props) {
         // Complete upload
         setUploads(prev => prev.map(u => u.id === id ? { ...u, progress: 100, status: 'done' } : u));
         
-        // Actually add to app data
-        setTimeout(() => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const dataUrl = typeof reader.result === 'string' && reader.result.startsWith('data:image')
-              ? reader.result 
-              : 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-            
-            const newPhoto: Photo = {
-              id: 'lead_' + Math.random().toString(36).substr(2, 9),
-              url: dataUrl,
-              fileName: file.name,
-              siteName: file.name.replace(/\.[^/.]+$/, "") || 'New Site Visit',
-              uploadDate: new Date().toISOString(),
-              captureDate: new Date().toISOString(),
-              uploaderId: user.id,
-              uploaderName: user.name,
-              status: 'new',
-              syncStatus: 'synced',
-              site_lat: 30.901000,
-              site_lng: 75.857300,
-              gps: { lat: 30.901000, lng: 75.857300 }
-            };
-            onUpload(newPhoto);
+        // Actually add to app data with compressed image
+        setTimeout(async () => {
+          const dataUrl = await compressImageFile(file);
+          const meta = await extractPhotoMeta(file, gpsCoords);
+          
+          const cleanSiteAddress = getCleanSiteName(file.name);
+          const finalGps = meta.gps;
+          const captureDateStr = meta.captureDate;
+          const plusCodeStr = await generatePlusCodeWithCityAsync(finalGps.lat, finalGps.lng);
+
+          const capturedDevName = getDeviceModelInfo();
+
+          const newPhoto: Photo = {
+            id: 'lead_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            url: dataUrl,
+            fileName: file.name,
+            siteName: cleanSiteAddress,
+            uploadDate: new Date().toISOString(),
+            captureDate: captureDateStr,
+            uploaderId: user.id,
+            uploaderName: user.name,
+            staffMember: user.name,
+            status: 'new',
+            syncStatus: activeOnline ? 'synced' : 'pending',
+            leadSource: 'Field Visit',
+            site_lat: finalGps.lat,
+            site_lng: finalGps.lng,
+            gps: finalGps,
+            plusCode: plusCodeStr,
+            locationSource: meta.source,
+            deviceInfo: capturedDevName
           };
-          reader.readAsDataURL(file);
+          onUpload(newPhoto);
         }, 300);
 
       } else {
         setUploads(prev => prev.map(u => u.id === id ? { ...u, progress, status: 'uploading' } : u));
       }
-    }, 400);
+    }, 200);
   };
 
   const removeUpload = (id: string) => {
@@ -85,10 +254,12 @@ export default function UploadView({ user, onUpload, onViewPending }: Props) {
   return (
     <div className="bg-[#1A1515] min-h-screen pb-20 p-4">
       {/* Offline Banner */}
-      <div className="bg-[#3A2E2E] border border-orange-500/30 rounded-lg p-3 flex items-center gap-3 mb-6 shadow-lg shadow-black/50">
-        <WifiOff className="text-field-gold" size={20} />
-        <span className="text-field-gold text-sm font-medium">Offline Mode: Photos will sync when online</span>
-      </div>
+      {!activeOnline && (
+        <div className="bg-[#3A2E2E] border border-orange-500/30 rounded-lg p-3 flex items-center gap-3 mb-6 shadow-lg shadow-black/50 animate-fade-in">
+          <WifiOff className="text-field-gold" size={20} />
+          <span className="text-field-gold text-sm font-medium">Offline Mode Active: Photos will automatically sync when network is connected</span>
+        </div>
+      )}
 
       {/* Main Actions */}
       <div className="grid grid-cols-2 gap-4 mb-8">

@@ -12,6 +12,17 @@ export type FollowUpType = 'Phone Call' | 'Site Visit' | 'WhatsApp' | 'Email' | 
 
 export type FollowUpStatus = 'pending' | 'completed' | 'overdue';
 
+export interface StaffLocation {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  timestamp: string; // ISO string when location was recorded
+  address?: string; // e.g. "Mohali, Punjab"
+  plusCode?: string;
+  isLive?: boolean;
+  deviceInfo?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -20,6 +31,9 @@ export interface User {
   role: Role;
   designation?: string;
   avatar: string;
+  lastLocation?: StaffLocation;
+  lastLoginTime?: string;
+  lastLogoutTime?: string;
 }
 
 export interface Professional {
@@ -74,6 +88,8 @@ export interface Photo {
   site_lng?: number;
   gps?: { lat: number; lng: number }; 
   plusCode?: string; // CRITICAL: This is the source of truth for CRM location
+  locationSource?: 'exif' | 'device';
+  deviceInfo?: string;
   
   leadSource?: string;
   customLeadSource?: string;

@@ -1,7 +1,10 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, Photo } from '../types';
-import { Search, Download, X, Filter, Grid, List, CheckCircle, Calendar, ChevronDown, Share2, Copy, MoreVertical, RefreshCw, CheckSquare, Square, Check } from 'lucide-react';
+import { 
+  Search, Download, X, Filter, Grid, List, CheckCircle, Calendar, ChevronDown, Share2, 
+  Copy, MoreVertical, RefreshCw, CheckSquare, Square, Check, Eye, MapPin, Phone, Mail, 
+  User as UserIcon, Building, ExternalLink, FileText, Tag, Shield, Clock, HardHat, ArrowLeft
+} from 'lucide-react';
 
 interface Props {
   user: User;
@@ -21,15 +24,18 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
   const [showFilters, setShowFilters] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   
+  // Inspect photo details modal
+  const [inspectPhoto, setInspectPhoto] = useState<Photo | null>(null);
+  const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
+  
   // View & Sort State
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [showSortMenu, setShowSortMenu] = useState(false);
 
-  // Filter State
+  // Filter State - Default to include all active statuses so leads are always visible
   const [dateFilter, setDateFilter] = useState<DateFilter>((initialDateFilter as DateFilter) || 'all');
-  // Updated status filters
-  const [statusFilter, setStatusFilter] = useState<string[]>(['in-progress', 'new']);
+  const [statusFilter, setStatusFilter] = useState<string[]>(['in-progress', 'new', 'completed', 'quoted', 'won', 'lost', 'on-hold']);
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
 
   useEffect(() => {
@@ -42,8 +48,13 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
 
   const filteredPhotos = useMemo(() => {
     let result = photos.filter(p => {
-      // 1. Base Permission Filter
-      if (user.role !== 'admin' && p.uploaderId !== user.id) return false;
+      // 1. Base Permission Filter (Admins see everything, Staff sees their own submissions)
+      if (user.role !== 'admin') {
+        const isMyLead = p.uploaderId === user.id || 
+                         (p.uploaderName && p.uploaderName.toLowerCase() === user.name.toLowerCase()) ||
+                         (p.staffMember && p.staffMember.toLowerCase() === user.name.toLowerCase());
+        if (!isMyLead) return false;
+      }
       return true;
     });
 
@@ -58,6 +69,8 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
         (p.priority?.toLowerCase().includes(lowerTerm)) ||
         (p.status?.toLowerCase().includes(lowerTerm)) ||
         (p.plusCode?.toLowerCase().includes(lowerTerm)) ||
+        (p.staffMember?.toLowerCase().includes(lowerTerm)) ||
+        (p.uploaderName?.toLowerCase().includes(lowerTerm)) ||
         // Search inside People Met array
         (p.peopleMet?.some(person => 
           person.name.toLowerCase().includes(lowerTerm) || 
@@ -140,362 +153,574 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
         await navigator.share({
           title: 'FieldPhoto Export',
           text: textToShare,
-          url: window.location.href, // In a real app, this would be a deep link
+          url: window.location.href,
         });
       } catch (error) {
         console.log('Error sharing', error);
       }
     } else {
-      // Fallback
       alert(`Copied to clipboard: ${textToShare}`);
     }
   };
 
-  const toggleStatusFilter = (status: string) => {
-    setStatusFilter(prev => 
-      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
-    );
+  const toggleStatusFilter = (st: string) => {
+     if (statusFilter.includes(st)) {
+        setStatusFilter(statusFilter.filter(s => s !== st));
+     } else {
+        setStatusFilter([...statusFilter, st]);
+     }
   };
 
-  const togglePriorityFilter = (priority: string) => {
-    setPriorityFilter(prev => 
-      prev.includes(priority) ? prev.filter(s => s !== priority) : [...prev, priority]
-    );
+  const togglePriorityFilter = (pr: string) => {
+     if (priorityFilter.includes(pr)) {
+        setPriorityFilter(priorityFilter.filter(p => p !== pr));
+     } else {
+        setPriorityFilter([...priorityFilter, pr]);
+     }
   };
 
   return (
-    <div className="bg-[#1A1515] min-h-screen text-white relative pb-32">
+    <div className="min-h-screen bg-[#1A1515] text-white pb-24">
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-[#1A1515]/95 backdrop-blur border-b border-[#2D2424] px-4 py-4 shadow-xl">
-         <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold">Photo Gallery ({filteredPhotos.length})</h2>
-            
-            <div className="relative">
-              <button 
-                onClick={() => setShowMenu(!showMenu)} 
-                className="text-field-gold p-2 hover:bg-white/10 rounded-full transition-colors"
-              >
-                <MoreVertical size={24} />
-              </button>
-              
-              {/* Context Menu */}
-              {showMenu && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-[#2D2424] border border-[#3A2E2E] rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                   <button 
-                      onClick={handleSelectAll} 
-                      className="w-full text-left px-4 py-3 hover:bg-white/5 text-sm flex items-center gap-2 text-white"
-                    >
-                      <CheckSquare size={16} className="text-field-gold" /> Select All
-                   </button>
-                   <button 
-                      onClick={handleDeselectAll} 
-                      className="w-full text-left px-4 py-3 hover:bg-white/5 text-sm flex items-center gap-2 text-white"
-                    >
-                      <Square size={16} className="text-field-gold" /> Deselect All
-                   </button>
-                   <div className="h-px bg-[#3A2E2E] my-1"></div>
-                   <button 
-                      onClick={() => { setShowMenu(false); setSearchTerm(''); setDateFilter('all'); }} 
-                      className="w-full text-left px-4 py-3 hover:bg-white/5 text-sm flex items-center gap-2 text-white"
-                   >
-                      <RefreshCw size={16} className="text-field-gold" /> Reset Filters
-                   </button>
-                </div>
-              )}
-            </div>
-         </div>
-         
-         {/* Search Bar */}
-         <div className="relative mb-4">
-            <Search className="absolute left-3 top-3 text-gray-500" size={18} />
-            <input 
-               type="text" 
-               placeholder="Search by name, phone, notes, location..." 
-               className="w-full bg-[#110C0C] border border-[#3A2E2E] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:border-field-gold outline-none placeholder-gray-600 transition-colors"
-               value={searchTerm}
-               onChange={e => setSearchTerm(e.target.value)}
-            />
-         </div>
+      <div className="p-4 bg-[#2D2424] border-b border-[#3A2E2E] sticky top-0 z-30 flex items-center justify-between shadow-md">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="p-2 hover:bg-[#1A1515] rounded-xl text-gray-300 hover:text-white transition-colors">
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="text-lg font-bold">Photo Gallery</h1>
+            <p className="text-xs text-gray-400">{filteredPhotos.length} {filteredPhotos.length === 1 ? 'Lead Photo' : 'Lead Photos'}</p>
+          </div>
+        </div>
 
-         {/* Filter Chips & View Toggle */}
-         <div className="flex items-center justify-between z-10 relative">
-             
-             {/* Sort Dropdown Group */}
-             <div className="relative mr-2 flex-shrink-0">
-                 <button 
-                    onClick={() => setShowSortMenu(!showSortMenu)}
-                    className="flex items-center gap-1 bg-[#2D2424] border border-[#3A2E2E] rounded-full px-3 py-2 text-xs text-white whitespace-nowrap active:scale-95 transition-transform"
-                 >
-                    <span className="text-field-gold"><List size={14}/></span> 
-                    Sort: <span className="capitalize text-field-gold ml-1">{sortBy}</span> 
-                    <ChevronDown size={12}/>
-                 </button>
-                 
-                 {/* Sort Menu - Positioned absolutely relative to this button */}
-                 {showSortMenu && (
-                    <div className="absolute top-full left-0 mt-2 w-40 bg-[#2D2424] border border-[#3A2E2E] rounded-lg shadow-2xl z-50 overflow-hidden">
-                       {['newest', 'oldest', 'priority'].map(opt => (
-                          <button 
-                            key={opt}
-                            onClick={() => { setSortBy(opt as SortOption); setShowSortMenu(false); }}
-                            className={`w-full text-left px-4 py-3 text-xs capitalize hover:bg-white/5 border-b border-[#3A2E2E]/50 last:border-0 ${sortBy === opt ? 'text-field-gold font-bold bg-field-gold/10' : 'text-gray-300'}`}
-                          >
-                             {opt}
-                          </button>
-                       ))}
-                    </div>
-                 )}
-             </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setShowFilters(!showFilters)} 
+            className={`p-2 rounded-xl border flex items-center gap-1.5 text-xs font-bold transition-all ${statusFilter.length < 7 || priorityFilter.length > 0 || dateFilter !== 'all' ? 'bg-field-gold text-black border-field-gold' : 'bg-[#1A1515] text-gray-300 border-[#3A2E2E] hover:border-gray-500'}`}
+          >
+            <Filter size={16} />
+            <span>Filter</span>
+          </button>
 
-            {/* Scrollable Filters */}
-            <div className="flex gap-2 overflow-x-auto no-scrollbar items-center flex-1">
-               <button 
-                  onClick={() => setShowFilters(true)}
-                  className={`flex items-center gap-1 bg-[#2D2424] border rounded-full px-3 py-1.5 text-xs text-white whitespace-nowrap transition-colors ${
-                    (statusFilter.length < 2 || priorityFilter.length > 0 || dateFilter !== 'all') 
-                      ? 'border-field-gold text-field-gold bg-field-gold/10' 
-                      : 'border-[#3A2E2E] hover:border-field-gold'
-                  }`}
-               >
-                  <Filter size={12}/> Filters 
-                  {(statusFilter.length < 2 || priorityFilter.length > 0 || dateFilter !== 'all') && (
-                     <span className="ml-1 w-2 h-2 rounded-full bg-field-gold inline-block"></span>
-                  )}
-               </button>
-               
-               {/* Quick Date Filters */}
-               {['today', 'week'].map(d => (
-                 <button 
-                    key={d}
-                    onClick={() => setDateFilter(dateFilter === d ? 'all' : d as DateFilter)}
-                    className={`px-3 py-1.5 rounded-full text-xs capitalize whitespace-nowrap border transition-colors ${dateFilter === d ? 'bg-field-gold text-black border-field-gold font-bold' : 'bg-[#2D2424] border-[#3A2E2E] text-gray-400'}`}
-                 >
-                    {d}
-                 </button>
-               ))}
-            </div>
+          <div className="relative">
+            <button 
+              onClick={() => setShowMenu(!showMenu)} 
+              className="p-2 bg-[#1A1515] hover:bg-black text-gray-300 hover:text-white rounded-xl border border-[#3A2E2E] transition-colors"
+            >
+              <MoreVertical size={18} />
+            </button>
+            {showMenu && (
+              <div className="absolute right-0 top-12 w-48 bg-[#2D2424] border border-[#3A2E2E] rounded-xl shadow-2xl py-2 z-50 animate-fade-in">
+                <button onClick={handleSelectAll} className="w-full text-left px-4 py-2 text-xs hover:bg-[#1A1515] flex items-center gap-2 text-gray-200">
+                  <CheckSquare size={14} /> Select All
+                </button>
+                <button onClick={handleDeselectAll} className="w-full text-left px-4 py-2 text-xs hover:bg-[#1A1515] flex items-center gap-2 text-gray-200">
+                  <Square size={14} /> Deselect All
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
-            {/* View Mode Toggle */}
-            <div className="flex bg-[#2D2424] rounded-lg p-1 border border-[#3A2E2E] ml-2 flex-shrink-0">
-               <button 
-                 onClick={() => setViewMode('grid')}
-                 className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'bg-field-gold text-black' : 'text-gray-400 hover:text-white'}`}
-               >
-                 <Grid size={16}/>
-               </button>
-               <button 
-                 onClick={() => setViewMode('list')}
-                 className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'bg-field-gold text-black' : 'text-gray-400 hover:text-white'}`}
-               >
-                 <List size={16}/>
-               </button>
-            </div>
-         </div>
+      {/* Search & Sort Toolbar */}
+      <div className="p-4 bg-[#231d1d] border-b border-[#3A2E2E] flex flex-wrap items-center justify-between gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input 
+            type="text" 
+            value={searchTerm} 
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Search leads, sources, notes, staff..."
+            className="w-full pl-9 pr-8 py-2 bg-[#1A1515] border border-[#3A2E2E] rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-field-gold transition-colors"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* View Mode Toggle */}
+          <div className="bg-[#1A1515] p-1 rounded-xl border border-[#3A2E2E] flex items-center gap-1">
+            <button 
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-field-gold text-black' : 'text-gray-400 hover:text-white'}`}
+            >
+              <Grid size={16} />
+            </button>
+            <button 
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-field-gold text-black' : 'text-gray-400 hover:text-white'}`}
+            >
+              <List size={16} />
+            </button>
+          </div>
+
+          {/* Sort Menu */}
+          <div className="relative">
+            <button 
+              onClick={() => setShowSortMenu(!showSortMenu)}
+              className="px-3 py-2 bg-[#1A1515] border border-[#3A2E2E] rounded-xl text-xs font-medium text-gray-300 hover:text-white flex items-center gap-1.5"
+            >
+              <span>Sort: {sortBy === 'newest' ? 'Newest' : sortBy === 'oldest' ? 'Oldest' : 'Priority'}</span>
+              <ChevronDown size={14} />
+            </button>
+            {showSortMenu && (
+              <div className="absolute right-0 top-11 w-36 bg-[#2D2424] border border-[#3A2E2E] rounded-xl shadow-2xl py-1 z-40">
+                {(['newest', 'oldest', 'priority'] as SortOption[]).map(s => (
+                  <button 
+                    key={s}
+                    onClick={() => { setSortBy(s); setShowSortMenu(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs capitalize ${sortBy === s ? 'text-field-gold font-bold bg-[#1A1515]' : 'text-gray-300 hover:bg-[#1A1515]'}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Content Area */}
       <div className="p-4">
-         {filteredPhotos.length === 0 ? (
-            <div className="flex flex-col items-center justify-center pt-20 text-gray-500">
-               <Search size={48} className="mb-4 opacity-20" />
-               <p>No photos match your criteria</p>
-               <button onClick={() => { setSearchTerm(''); setDateFilter('all'); setStatusFilter(['in-progress', 'new']); setPriorityFilter([]); }} className="mt-4 text-field-gold text-sm underline">
-                  Clear all filters
-               </button>
-            </div>
-         ) : viewMode === 'grid' ? (
-            // GRID VIEW
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-               {filteredPhotos.map(photo => {
-                  const isSelected = selectedPhotos.includes(photo.id);
-                  return (
-                     <div 
-                        key={photo.id} 
-                        className={`relative rounded-xl overflow-hidden aspect-[4/5] group border transition-all ${isSelected ? 'border-field-gold ring-1 ring-field-gold' : 'border-transparent'}`}
-                        onClick={() => toggleSelection(photo.id)}
-                     >
-                        <img src={photo.url} className="w-full h-full object-cover transition-transform group-hover:scale-110" loading="lazy" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity"></div>
-                        
-                        {/* Selection Circle */}
-                        <div className="absolute top-2 left-2 z-10">
-                           <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-field-gold border-field-gold' : 'border-white/50 bg-black/20'}`}>
-                              {isSelected && <Check size={14} className="text-black" />}
-                           </div>
-                        </div>
+        {filteredPhotos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center pt-20 text-gray-500">
+            <Search size={48} className="mb-4 opacity-20" />
+            <p className="text-sm font-medium">No lead photos match your filter criteria</p>
+            <button 
+              onClick={() => { setSearchTerm(''); setDateFilter('all'); setStatusFilter(['in-progress', 'new', 'completed', 'quoted', 'won', 'lost', 'on-hold']); setPriorityFilter([]); }} 
+              className="mt-4 text-field-gold text-xs font-bold underline"
+            >
+              Clear all filters
+            </button>
+          </div>
+        ) : viewMode === 'grid' ? (
+          // GRID VIEW
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {filteredPhotos.map(photo => {
+              const isSelected = selectedPhotos.includes(photo.id);
+              return (
+                <div 
+                  key={photo.id} 
+                  className={`relative rounded-xl overflow-hidden aspect-[4/5] group border transition-all cursor-pointer ${isSelected ? 'border-field-gold ring-1 ring-field-gold' : 'border-[#3A2E2E] hover:border-gray-500'}`}
+                >
+                  <img 
+                    src={photo.url} 
+                    className="w-full h-full object-cover transition-transform group-hover:scale-105" 
+                    loading="lazy" 
+                    onClick={() => setInspectPhoto(photo)}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/20 to-transparent pointer-events-none"></div>
+                  
+                  {/* Selection Circle */}
+                  <div className="absolute top-2 left-2 z-10">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); toggleSelection(photo.id); }}
+                      className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-field-gold border-field-gold text-black' : 'border-white/60 bg-black/40 text-white hover:bg-black/60'}`}
+                    >
+                      {isSelected ? <Check size={14} className="stroke-[3]" /> : <Square size={12} className="opacity-0 group-hover:opacity-100" />}
+                    </button>
+                  </div>
 
-                        {/* Status/Priority Indicators */}
-                        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
-                           <div className={`w-3 h-3 rounded-full border-2 border-black ${photo.status === 'in-progress' ? 'bg-green-500' : 'bg-orange-500'}`}></div>
-                           {photo.priority === 'High' && <div className="text-[8px] bg-red-500 text-white px-1.5 rounded border border-black">HIGH</div>}
-                        </div>
+                  {/* View Details Action Button */}
+                  <div className="absolute top-2 right-2 z-10 flex gap-1 items-center">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setInspectPhoto(photo); }}
+                      className="p-1.5 bg-black/60 backdrop-blur-md hover:bg-field-gold hover:text-black text-white rounded-lg border border-white/20 transition-all shadow-md"
+                      title="View Lead Details"
+                    >
+                      <Eye size={14} />
+                    </button>
+                  </div>
 
-                        {/* Info Overlay */}
-                        <div className="absolute bottom-3 left-3 right-3">
-                           <h3 className="text-sm font-bold text-white leading-tight mb-0.5 truncate">{photo.siteName || 'Untitled Site'}</h3>
-                           <p className="text-[10px] text-gray-300 truncate">{photo.leadSource || 'Unknown Source'}</p>
-                           <p className="text-[10px] text-gray-400 mt-1">{new Date(photo.captureDate).toLocaleDateString()}</p>
+                  {/* Info Overlay */}
+                  <div className="absolute bottom-2.5 left-2.5 right-2.5 cursor-pointer" onClick={() => setInspectPhoto(photo)}>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${photo.status === 'in-progress' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                        {photo.status.replace('_', ' ')}
+                      </span>
+                      {photo.priority === 'High' && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded">
+                          HIGH
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-sm font-bold text-white leading-tight truncate">{photo.siteName || 'Untitled Site'}</h3>
+                    <p className="text-[10px] text-gray-300 truncate mt-0.5">{photo.leadSource ? `Source: ${photo.leadSource}` : 'Field Lead'}</p>
+                    <p className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
+                      <span>{new Date(photo.captureDate).toLocaleDateString()}</span>
+                      <span className="text-field-gold font-medium">{photo.staffMember || photo.uploaderName || 'Staff'}</span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          // LIST VIEW
+          <div className="space-y-3">
+            {filteredPhotos.map(photo => {
+              const isSelected = selectedPhotos.includes(photo.id);
+              return (
+                <div 
+                  key={photo.id} 
+                  className={`flex gap-3 p-3 bg-[#2D2424] rounded-xl border ${isSelected ? 'border-field-gold' : 'border-[#3A2E2E]'} hover:border-gray-500 transition-all cursor-pointer`}
+                  onClick={() => setInspectPhoto(photo)}
+                >
+                  <div className="relative w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden">
+                    <img src={photo.url} className="w-full h-full object-cover" />
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); toggleSelection(photo.id); }}
+                      className="absolute top-1 left-1 z-10"
+                    >
+                      <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${isSelected ? 'bg-field-gold border-field-gold text-black' : 'border-white/60 bg-black/50 text-white'}`}>
+                        {isSelected && <Check size={12} className="stroke-[3]" />}
+                      </div>
+                    </button>
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                    <div>
+                      <div className="flex justify-between items-start gap-2">
+                        <h3 className="text-white font-bold truncate">{photo.siteName || 'Untitled Site'}</h3>
+                        <div className="flex items-center gap-1">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${photo.priority === 'High' ? 'border-red-500 text-red-400 bg-red-500/10' : 'border-gray-600 text-gray-400'}`}>
+                            {photo.priority || 'Normal'}
+                          </span>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setInspectPhoto(photo); }}
+                            className="p-1 bg-[#1A1515] text-field-gold hover:bg-field-gold hover:text-black rounded transition-colors ml-1"
+                          >
+                            <Eye size={14} />
+                          </button>
                         </div>
-                     </div>
-                  );
-               })}
-            </div>
-         ) : (
-            // LIST VIEW
-            <div className="space-y-3">
-               {filteredPhotos.map(photo => {
-                   const isSelected = selectedPhotos.includes(photo.id);
-                   return (
-                     <div 
-                        key={photo.id} 
-                        onClick={() => toggleSelection(photo.id)}
-                        className={`flex gap-4 p-3 bg-[#2D2424] rounded-xl border ${isSelected ? 'border-field-gold' : 'border-[#3A2E2E]'} transition-all`}
-                     >
-                        <div className="relative w-24 h-24 flex-shrink-0">
-                           <img src={photo.url} className="w-full h-full object-cover rounded-lg" />
-                           <div className="absolute top-1 left-1">
-                              <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${isSelected ? 'bg-field-gold border-field-gold' : 'border-white/50 bg-black/40'}`}>
-                                 {isSelected && <Check size={12} className="text-black" />}
-                              </div>
-                           </div>
-                        </div>
-                        <div className="flex-1 min-w-0 flex flex-col justify-center">
-                           <div className="flex justify-between items-start">
-                              <h3 className="text-white font-bold truncate pr-2">{photo.siteName || 'Untitled'}</h3>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${photo.priority === 'High' ? 'border-red-500 text-red-400 bg-red-500/10' : 'border-gray-600 text-gray-400'}`}>
-                                 {photo.priority || 'Normal'}
-                              </span>
-                           </div>
-                           <p className="text-xs text-field-textMuted mt-1 truncate">Source: {photo.leadSource}</p>
-                           <p className="text-xs text-gray-500 mt-0.5">{photo.notes ? `"${photo.notes.substring(0, 40)}..."` : 'No notes'}</p>
-                           <div className="flex justify-between items-end mt-2">
-                              <span className="text-[10px] text-gray-500">{new Date(photo.captureDate).toLocaleString()}</span>
-                              <span className={`text-[10px] capitalize ${photo.status === 'in-progress' ? 'text-green-500' : 'text-orange-400'}`}>{photo.status.replace('_', ' ')}</span>
-                           </div>
-                        </div>
-                     </div>
-                   );
-               })}
-            </div>
-         )}
+                      </div>
+                      <p className="text-xs text-field-textMuted mt-1 truncate">Source: {photo.leadSource || 'Field Visit'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{photo.notes ? `"${photo.notes}"` : 'No notes attached'}</p>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-gray-400 pt-1 border-t border-[#3A2E2E]/50 mt-1">
+                      <span>{new Date(photo.captureDate).toLocaleString()}</span>
+                      <span className="text-field-gold font-medium">By: {photo.staffMember || photo.uploaderName || 'Staff'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Bottom Selection Bar */}
       {selectedPhotos.length > 0 && (
-         <div className="fixed bottom-0 left-0 right-0 bg-[#2D2424] border-t border-[#3A2E2E] p-4 pb-8 md:pb-4 flex items-center justify-between z-50 animate-slide-up shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-            <div>
-               <p className="text-white font-bold">{selectedPhotos.length} Selected</p>
-               <button onClick={() => setSelectedPhotos([])} className="text-field-gold text-xs hover:underline">Deselect All</button>
-            </div>
-            <div className="flex gap-3">
-               <button 
-                  onClick={handleShare}
-                  className="w-10 h-10 rounded-full bg-[#1A1515] text-white flex items-center justify-center border border-[#3A2E2E] hover:border-field-gold hover:text-field-gold transition-colors"
-               >
-                  <Share2 size={18} />
-               </button>
-               
-               {/* ROLE BASED EXPORT: Only Admin can see this */}
-               {user.role === 'admin' && (
-                  <button 
-                     onClick={onExport}
-                     className="bg-field-gold text-black px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#b57b17] transition-colors shadow-lg shadow-field-gold/20"
-                  >
-                     <Download size={16} /> Export CSV
-                  </button>
-               )}
-            </div>
-         </div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#2D2424] border-t border-[#3A2E2E] p-4 pb-8 md:pb-4 flex items-center justify-between z-50 animate-slide-up shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+          <div>
+            <p className="text-white font-bold">{selectedPhotos.length} Selected</p>
+            <button onClick={() => setSelectedPhotos([])} className="text-field-gold text-xs hover:underline">Deselect All</button>
+          </div>
+          <div className="flex gap-3">
+            <button 
+              onClick={handleShare}
+              className="w-10 h-10 rounded-full bg-[#1A1515] text-white flex items-center justify-center border border-[#3A2E2E] hover:border-field-gold hover:text-field-gold transition-colors"
+            >
+              <Share2 size={18} />
+            </button>
+            
+            {user.role === 'admin' && (
+              <button 
+                onClick={onExport}
+                className="bg-field-gold text-black px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#b57b17] transition-colors shadow-lg shadow-field-gold/20"
+              >
+                <Download size={16} /> Export CSV
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Filter Drawer */}
       {showFilters && (
-         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm" onClick={() => setShowFilters(false)}>
-            <div 
-               className="bg-[#1C1818] w-full max-w-md rounded-t-2xl p-6 border-t border-field-gold/20 animate-slide-up shadow-2xl"
-               onClick={e => e.stopPropagation()} // Prevent close on content click
-            >
-               <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-white">Filters</h3>
-                  <button onClick={() => setShowFilters(false)}><X size={24} className="text-gray-400 hover:text-white"/></button>
-               </div>
-
-               <div className="space-y-6 max-h-[60vh] overflow-y-auto">
-                  {/* Date Range */}
-                  <div>
-                     <label className="text-field-gold text-xs font-bold uppercase tracking-wider mb-3 block">Date Range</label>
-                     <div className="flex gap-2 flex-wrap">
-                        {['all', 'today', 'week', 'month'].map(d => (
-                           <button 
-                              key={d}
-                              onClick={() => setDateFilter(d as DateFilter)}
-                              className={`px-4 py-2 rounded-full text-sm capitalize transition-colors ${dateFilter === d ? 'bg-field-gold text-black font-bold' : 'bg-[#2D2424] text-gray-400 border border-[#3A2E2E]'}`}
-                           >
-                              {d}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
-
-                  {/* Photo Status */}
-                  <div>
-                     <label className="text-field-gold text-xs font-bold uppercase tracking-wider mb-3 block">Photo Status</label>
-                     <div className="space-y-3">
-                        <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-white/5">
-                           <div 
-                              onClick={() => toggleStatusFilter('in-progress')}
-                              className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${statusFilter.includes('in-progress') ? 'bg-field-gold border-field-gold' : 'border-gray-600'}`}
-                           >
-                              {statusFilter.includes('in-progress') && <Check size={14} className="text-black"/>}
-                           </div>
-                           <span className="text-white">Active (In Progress)</span>
-                        </label>
-                        <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-white/5">
-                           <div 
-                              onClick={() => toggleStatusFilter('new')}
-                              className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${statusFilter.includes('new') ? 'bg-field-gold border-field-gold' : 'border-gray-600'}`}
-                           >
-                              {statusFilter.includes('new') && <Check size={14} className="text-black"/>}
-                           </div>
-                           <span className="text-white">New (Pending)</span>
-                        </label>
-                     </div>
-                  </div>
-
-                  {/* Priority Level */}
-                  <div>
-                     <label className="text-field-gold text-xs font-bold uppercase tracking-wider mb-3 block">Priority Level</label>
-                     <div className="flex gap-3">
-                        {['High', 'Medium', 'Low'].map(p => (
-                           <button 
-                              key={p}
-                              onClick={() => togglePriorityFilter(p)}
-                              className={`flex-1 py-3 rounded-lg border text-sm flex items-center justify-center gap-2 transition-colors ${priorityFilter.includes(p) ? 'border-field-gold bg-field-gold/10 text-field-gold' : 'border-[#3A2E2E] bg-[#2D2424] text-gray-400'}`}
-                           >
-                              <div className={`w-2 h-2 rounded-full ${p === 'High' ? 'bg-red-500' : p === 'Medium' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
-                              {p}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
-               </div>
-
-               <div className="flex gap-4 mt-8 pt-4 border-t border-[#3A2E2E]">
-                  <button 
-                     onClick={() => { setDateFilter('all'); setStatusFilter(['in-progress', 'new']); setPriorityFilter([]); setShowFilters(false); }}
-                     className="flex-1 py-3 border border-field-gold text-field-gold rounded-lg font-bold hover:bg-field-gold/10 transition-colors"
-                  >
-                     Clear All
-                  </button>
-                  <button 
-                     onClick={() => setShowFilters(false)}
-                     className="flex-1 py-3 bg-field-gold text-black rounded-lg font-bold hover:bg-[#b57b17] transition-colors"
-                  >
-                     Apply Filters
-                  </button>
-               </div>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm" onClick={() => setShowFilters(false)}>
+          <div 
+            className="bg-[#1C1818] w-full max-w-md rounded-t-2xl p-6 border-t border-field-gold/20 animate-slide-up shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white">Filter Leads</h3>
+              <button onClick={() => setShowFilters(false)}><X size={24} className="text-gray-400 hover:text-white"/></button>
             </div>
-         </div>
+
+            <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-1">
+              {/* Date Range */}
+              <div>
+                <label className="text-field-gold text-xs font-bold uppercase tracking-wider mb-3 block">Date Range</label>
+                <div className="flex gap-2 flex-wrap">
+                  {['all', 'today', 'week', 'month'].map(d => (
+                    <button 
+                      key={d}
+                      onClick={() => setDateFilter(d as DateFilter)}
+                      className={`px-4 py-2 rounded-full text-sm capitalize transition-colors ${dateFilter === d ? 'bg-field-gold text-black font-bold' : 'bg-[#2D2424] text-gray-400 border border-[#3A2E2E]'}`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="text-field-gold text-xs font-bold uppercase tracking-wider mb-3 block">Lead Status</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'in-progress', label: 'Active (In Progress)' },
+                    { id: 'new', label: 'New Lead' },
+                    { id: 'completed', label: 'Completed' },
+                    { id: 'quoted', label: 'Quoted' },
+                    { id: 'won', label: 'Won' },
+                    { id: 'lost', label: 'Lost' }
+                  ].map(st => (
+                    <button
+                      key={st.id}
+                      onClick={() => toggleStatusFilter(st.id)}
+                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-colors ${statusFilter.includes(st.id) ? 'bg-field-gold/20 border-field-gold text-field-gold' : 'bg-[#2D2424] border-[#3A2E2E] text-gray-400'}`}
+                    >
+                      <span>{st.label}</span>
+                      {statusFilter.includes(st.id) && <Check size={14} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Priority */}
+              <div>
+                <label className="text-field-gold text-xs font-bold uppercase tracking-wider mb-3 block">Priority Level</label>
+                <div className="flex gap-3">
+                  {['High', 'Medium', 'Low'].map(p => (
+                    <button 
+                      key={p}
+                      onClick={() => togglePriorityFilter(p)}
+                      className={`flex-1 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-colors ${priorityFilter.includes(p) ? 'border-field-gold bg-field-gold/20 text-field-gold' : 'border-[#3A2E2E] bg-[#2D2424] text-gray-400'}`}
+                    >
+                      <div className={`w-2 h-2 rounded-full ${p === 'High' ? 'bg-red-500' : p === 'Medium' ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-4 mt-8 pt-4 border-t border-[#3A2E2E]">
+              <button 
+                onClick={() => { setDateFilter('all'); setStatusFilter(['in-progress', 'new', 'completed', 'quoted', 'won', 'lost', 'on-hold']); setPriorityFilter([]); setShowFilters(false); }}
+                className="flex-1 py-3 border border-field-gold text-field-gold rounded-xl font-bold hover:bg-field-gold/10 transition-colors"
+              >
+                Clear All
+              </button>
+              <button 
+                onClick={() => setShowFilters(false)}
+                className="flex-1 py-3 bg-field-gold text-black rounded-xl font-bold hover:bg-[#b57b17] transition-colors"
+              >
+                Apply Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lead Inspector Modal */}
+      {inspectPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-[#2D2424] border border-[#3A2E2E] rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl text-white">
+            
+            {/* Header */}
+            <div className="p-4 border-b border-[#3A2E2E] flex items-center justify-between sticky top-0 bg-[#2D2424] z-10">
+              <div className="flex items-center gap-2">
+                <Tag className="text-field-gold" size={20} />
+                <h2 className="text-lg font-bold truncate max-w-md">{inspectPhoto.siteName || 'Lead Details'}</h2>
+              </div>
+              <button 
+                onClick={() => setInspectPhoto(null)} 
+                className="p-1.5 hover:bg-[#1A1515] rounded-xl text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-6">
+              {/* Image Banner */}
+              <div className="relative rounded-xl overflow-hidden bg-black aspect-video border border-[#3A2E2E] group">
+                <img src={inspectPhoto.url} className="w-full h-full object-cover" />
+                <button 
+                  onClick={() => setFullscreenImage(inspectPhoto.url)}
+                  className="absolute bottom-3 right-3 bg-black/70 hover:bg-field-gold hover:text-black text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 backdrop-blur-sm transition-all"
+                >
+                  <Eye size={14} /> Enlarge Image
+                </button>
+                <div className="absolute top-3 left-3 flex gap-2">
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-md uppercase tracking-wider ${inspectPhoto.status === 'in-progress' ? 'bg-green-500 text-black' : 'bg-amber-500 text-black'}`}>
+                    {inspectPhoto.status.replace('_', ' ')}
+                  </span>
+                  {inspectPhoto.priority && (
+                    <span className="text-xs font-bold px-2.5 py-1 bg-red-500 text-white rounded-md">
+                      {inspectPhoto.priority} Priority
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Key Lead Metadata */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 bg-[#1A1515] p-4 rounded-xl border border-[#3A2E2E]">
+                <div>
+                  <span className="text-[10px] text-gray-400 uppercase font-semibold block">Posted By</span>
+                  <span className="text-sm font-bold text-field-gold flex items-center gap-1 mt-0.5">
+                    <UserIcon size={14} /> {inspectPhoto.staffMember || inspectPhoto.uploaderName || 'Staff Member'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 uppercase font-semibold block">Capture Date</span>
+                  <span className="text-sm font-medium text-gray-200 flex items-center gap-1 mt-0.5">
+                    <Clock size={14} /> {new Date(inspectPhoto.captureDate || inspectPhoto.uploadDate).toLocaleDateString()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 uppercase font-semibold block">Lead Source</span>
+                  <span className="text-sm font-medium text-gray-200 block mt-0.5">
+                    {inspectPhoto.leadSource || 'Field Search'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Location & GPS */}
+              {(inspectPhoto.site_lat || inspectPhoto.gps || inspectPhoto.plusCode) && (
+                <div className="bg-[#1A1515] p-4 rounded-xl border border-[#3A2E2E] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-field-gold uppercase tracking-wider flex items-center gap-1.5">
+                      <MapPin size={16} /> Site Coordinates & Plus Code
+                    </h4>
+                    <a 
+                      href={`https://www.google.com/maps/search/?api=1&query=${inspectPhoto.site_lat || inspectPhoto.gps?.lat || 30.901},${inspectPhoto.site_lng || inspectPhoto.gps?.lng || 75.857}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-field-gold hover:underline flex items-center gap-1 font-bold"
+                    >
+                      Get Directions <ExternalLink size={12} />
+                    </a>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    {inspectPhoto.plusCode && (
+                      <div className="bg-[#2D2424] p-2.5 rounded-lg border border-[#3A2E2E]">
+                        <span className="text-gray-400 block text-[10px]">CRM Plus Code</span>
+                        <span className="font-mono text-field-gold font-bold">{inspectPhoto.plusCode}</span>
+                      </div>
+                    )}
+                    <div className="bg-[#2D2424] p-2.5 rounded-lg border border-[#3A2E2E]">
+                      <span className="text-gray-400 block text-[10px]">Verified GPS Coordinates</span>
+                      <span className="font-mono text-gray-300">
+                        {inspectPhoto.site_lat || inspectPhoto.gps?.lat || '30.901000'}, {inspectPhoto.site_lng || inspectPhoto.gps?.lng || '75.857300'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Contacts Met */}
+              {inspectPhoto.peopleMet && inspectPhoto.peopleMet.length > 0 && (
+                <div className="bg-[#1A1515] p-4 rounded-xl border border-[#3A2E2E] space-y-3">
+                  <h4 className="text-xs font-bold text-field-gold uppercase tracking-wider flex items-center gap-1.5">
+                    <UserIcon size={16} /> Contacts Met ({inspectPhoto.peopleMet.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {inspectPhoto.peopleMet.map((person, idx) => (
+                      <div key={idx} className="bg-[#2D2424] p-3 rounded-lg border border-[#3A2E2E] flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-sm text-white">{person.name}</p>
+                          <p className="text-xs text-field-textMuted">{person.designation || 'Contact Person'} {person.firmName ? `• ${person.firmName}` : ''}</p>
+                        </div>
+                        {person.phone && (
+                          <a 
+                            href={`tel:${person.phone}`}
+                            className="px-3 py-1.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-green-500 hover:text-black transition-colors"
+                          >
+                            <Phone size={12} /> {person.phone}
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Scope & Materials */}
+              {(inspectPhoto.constructionStage || inspectPhoto.materialInterests) && (
+                <div className="bg-[#1A1515] p-4 rounded-xl border border-[#3A2E2E] space-y-3">
+                  <h4 className="text-xs font-bold text-field-gold uppercase tracking-wider flex items-center gap-1.5">
+                    <HardHat size={16} /> Project Scope & Material Requirements
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    {inspectPhoto.constructionStage && (
+                      <div>
+                        <span className="text-gray-400 block text-[10px]">Construction Stage</span>
+                        <span className="font-medium text-white">{inspectPhoto.constructionStage}</span>
+                      </div>
+                    )}
+                    {inspectPhoto.estimatedQuantity && (
+                      <div>
+                        <span className="text-gray-400 block text-[10px]">Est. Quantity / Scope</span>
+                        <span className="font-medium text-white">{inspectPhoto.estimatedQuantity}</span>
+                      </div>
+                    )}
+                  </div>
+                  {inspectPhoto.materialInterests && inspectPhoto.materialInterests.length > 0 && (
+                    <div>
+                      <span className="text-gray-400 block text-[10px] mb-1.5">Interested Materials</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {inspectPhoto.materialInterests.map((mat, i) => (
+                          <span key={i} className="text-xs px-2.5 py-1 bg-field-gold/10 text-field-gold border border-field-gold/30 rounded-md font-medium">
+                            {mat}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Notes */}
+              {inspectPhoto.notes && (
+                <div className="bg-[#1A1515] p-4 rounded-xl border border-[#3A2E2E]">
+                  <h4 className="text-xs font-bold text-field-gold uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                    <FileText size={16} /> Lead Notes & Observations
+                  </h4>
+                  <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{inspectPhoto.notes}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-[#3A2E2E] bg-[#2D2424] flex justify-end gap-3 rounded-b-2xl">
+              <button 
+                onClick={() => setInspectPhoto(null)}
+                className="px-5 py-2.5 bg-[#1A1515] hover:bg-gray-800 text-gray-300 font-bold rounded-xl text-sm border border-[#3A2E2E] transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Zoom */}
+      {fullscreenImage && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 animate-fade-in" onClick={() => setFullscreenImage(null)}>
+          <button 
+            onClick={() => setFullscreenImage(null)}
+            className="absolute top-4 right-4 p-2 bg-white/10 text-white rounded-full hover:bg-white/30 transition-colors"
+          >
+            <X size={24} />
+          </button>
+          <img src={fullscreenImage} className="max-w-full max-h-full object-contain rounded-lg" />
+        </div>
       )}
     </div>
   );

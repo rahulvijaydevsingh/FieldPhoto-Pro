@@ -14,7 +14,7 @@ export const DEMO_ADMIN: User = {
 export const DEMO_STAFF: User = {
   id: 'u2',
   name: 'Amanpreet',
-  email: 'meera@maharajacrm.com',
+  email: 'amanpreet@maharajacrm.com',
   password: 'Amanpreet@93',
   role: 'staff',
   designation: 'Senior Field Representative',
@@ -74,17 +74,7 @@ const INITIAL_PHOTOS: Photo[] = [
   }
 ];
 
-const INITIAL_FOLLOWUPS: FollowUp[] = [
-  {
-    id: 'f1',
-    photoId: 'p1',
-    assignedToId: 'u2',
-    type: 'Phone Call',
-    date: '2025-01-18T18:00:00',
-    notes: 'Call owner after 6 PM regarding quotation approval',
-    status: 'pending'
-  }
-];
+const INITIAL_FOLLOWUPS: FollowUp[] = [];
 
 export const getInitialData = () => ({
   photos: INITIAL_PHOTOS,

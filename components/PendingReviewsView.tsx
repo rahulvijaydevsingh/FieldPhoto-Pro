@@ -23,7 +23,15 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
 
   const pendingPhotos = photos
     .filter(p => p.status === 'new')
-    .filter(p => user.role === 'admin' || p.uploaderId === user.id)
+    .filter(p => {
+      if (user.role === 'admin') return true;
+      const userNameLower = (user.name || '').toLowerCase();
+      return (
+        p.uploaderId === user.id ||
+        (p.uploaderName && p.uploaderName.toLowerCase() === userNameLower) ||
+        (p.staffMember && p.staffMember.toLowerCase() === userNameLower)
+      );
+    })
     .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
 
   if (selectedPhoto) {
@@ -110,9 +118,13 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center text-red-400 text-[11px] sm:text-xs mt-1">
-                      <MapPin size={12} className="mr-1 flex-shrink-0" />
-                      <span className="truncate">{hasDraft ? 'Draft In Progress' : 'Action Needed'}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs mt-1">
+                      <span className="text-field-gold font-semibold">Staff: {photo.staffMember || photo.uploaderName || 'Field Staff'}</span>
+                      <span className="text-gray-500">•</span>
+                      <div className="flex items-center text-red-400">
+                        <MapPin size={12} className="mr-1 flex-shrink-0" />
+                        <span className="truncate">{hasDraft ? 'Draft In Progress' : 'Action Needed'}</span>
+                      </div>
                     </div>
                   </div>
                   
@@ -126,7 +138,8 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
                     </button>
 
                     <button 
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         if (confirm(`Move "${photo.siteName || photo.fileName}" to Recycle Bin? (Admins can restore or permanently delete it)`)) {
                           onDeletePhoto(photo.id);
                         }
