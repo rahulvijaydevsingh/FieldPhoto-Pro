@@ -33,6 +33,7 @@ const TEAM_COL = 'team_members';
 const FOLLOWUPS_COL = 'followups';
 const RECYCLE_COL = 'recycle_bin';
 const SETTINGS_COL = 'app_settings';
+const BREADCRUMBS_COL = 'route_breadcrumbs';
 
 // Helper to handle Firestore quota or connection errors gracefully
 let isQuotaExceeded = false;
@@ -176,6 +177,37 @@ export async function saveRecycleItemToFirestore(item: RecycleItem) {
     await setDoc(doc(db, RECYCLE_COL, item.id), cleanItem, { merge: true });
   } catch (err) {
     handleFirestoreError('Saving recycle item', err);
+  }
+}
+
+// --- ROUTE BREADCRUMBS (CROSS-DEVICE STAFF MOVEMENT TRACKING) ---
+export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void) {
+  const q = query(collection(db, BREADCRUMBS_COL));
+  return onSnapshot(q, (snapshot) => {
+    const breadcrumbs = snapshot.docs.map(doc => doc.data());
+    onUpdate(breadcrumbs);
+  }, (err) => {
+    handleFirestoreError('Listening to route breadcrumbs', err);
+  });
+}
+
+export async function saveRouteBreadcrumbToFirestore(breadcrumb: any) {
+  if (isQuotaExceeded || !breadcrumb || breadcrumb.lat === undefined || breadcrumb.lng === undefined) return;
+  try {
+    const ts = (breadcrumb.timestamp && !isNaN(new Date(breadcrumb.timestamp).getTime())) 
+      ? new Date(breadcrumb.timestamp).getTime() 
+      : Date.now();
+    const latStr = Number(breadcrumb.lat).toFixed(4).replace(/[^0-9]/g, '');
+    const lngStr = Number(breadcrumb.lng).toFixed(4).replace(/[^0-9]/g, '');
+    const uid = (breadcrumb.userId || breadcrumb.userName || 'staff').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const docId = `crumb_${uid}_${ts}_${latStr}_${lngStr}`;
+
+    const cleanBreadcrumb = JSON.parse(JSON.stringify(breadcrumb));
+    cleanBreadcrumb.timestamp = new Date(ts).toISOString();
+
+    await setDoc(doc(db, BREADCRUMBS_COL, docId), cleanBreadcrumb, { merge: true });
+  } catch (err) {
+    handleFirestoreError('Saving route breadcrumb', err);
   }
 }
 

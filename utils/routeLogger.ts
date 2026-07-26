@@ -2,6 +2,7 @@
 // Stores breadcrumbs in local device storage without consuming cloud write quotas
 
 import { getDeviceModelInfo } from './locationUtils';
+import { saveRouteBreadcrumbToFirestore } from '../services/firebase';
 
 export interface RouteBreadcrumb {
   lat: number;
@@ -63,14 +64,17 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
     const trimmed = route.slice(-500);
     localStorage.setItem(key, JSON.stringify(trimmed));
 
-    // Also update global shared route store so Admin panel on any device receives staff breadcrumbs
+    // Also update global shared route store and Firestore so Admin panel on any device receives staff breadcrumbs
     try {
       const sharedStr = localStorage.getItem(SHARED_ROUTE_KEY);
       const sharedRoute: RouteBreadcrumb[] = sharedStr ? JSON.parse(sharedStr) : [];
       sharedRoute.push(point);
-      // Keep last 1000 pings total
+      // Keep last 1000 pings total in local cache
       localStorage.setItem(SHARED_ROUTE_KEY, JSON.stringify(sharedRoute.slice(-1000)));
       window.dispatchEvent(new Event('fieldops_sync'));
+
+      // Sync breadcrumb to Firestore for cross-device visibility
+      saveRouteBreadcrumbToFirestore(point).catch(e => console.warn('Breadcrumb cloud sync warning:', e));
     } catch (e) {}
 
     return trimmed;
@@ -94,18 +98,26 @@ export function getLocalRouteLog(dateStr?: string): RouteBreadcrumb[] {
 }
 
 /**
- * Gets shared route logs for all users or filtered by a specific staff member
+ * Gets shared route logs for all users or filtered by a specific staff member.
+ * Can optionally accept cloud-synced firestoreBreadcrumbs to support cross-device admin inspection.
  */
-export function getSharedRouteLogs(userId?: string, userName?: string): RouteBreadcrumb[] {
+export function getSharedRouteLogs(userId?: string, userName?: string, cloudBreadcrumbs?: RouteBreadcrumb[]): RouteBreadcrumb[] {
   try {
     const sharedStr = localStorage.getItem(SHARED_ROUTE_KEY);
     const allShared: RouteBreadcrumb[] = sharedStr ? JSON.parse(sharedStr) : [];
     const localToday = getLocalRouteLog();
+    const cloud = cloudBreadcrumbs || [];
     
-    // Merge local and shared
+    // Merge cloud, shared, and local breadcrumbs seamlessly using exact timestamp & coordinates
     const combinedMap = new Map<string, RouteBreadcrumb>();
-    [...allShared, ...localToday].forEach(item => {
-      const key = `${item.timestamp}_${item.lat}_${item.lng}`;
+    [...cloud, ...allShared, ...localToday].forEach(item => {
+      if (!item || item.lat === undefined || item.lng === undefined) return;
+      const ts = (item.timestamp && !isNaN(new Date(item.timestamp).getTime())) 
+        ? new Date(item.timestamp).getTime() 
+        : 0;
+      // Key by exact timestamp (ms) + coords + user to prevent overwriting distinct pings
+      const uid = item.userId || item.userName || '';
+      const key = `${uid}_${ts}_${Number(item.lat).toFixed(5)}_${Number(item.lng).toFixed(5)}`;
       combinedMap.set(key, item);
     });
 
@@ -118,7 +130,6 @@ export function getSharedRouteLogs(userId?: string, userName?: string): RouteBre
       combined = combined.filter(b => {
         if (b.userId && uidLower && b.userId.toLowerCase() === uidLower) return true;
         if (b.userName && uNameLower && b.userName.toLowerCase().includes(uNameLower)) return true;
-        // If breadcrumb has no user info attached, include it if it's from today as fallback
         return false;
       });
     }

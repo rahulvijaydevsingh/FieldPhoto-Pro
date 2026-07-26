@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Photo, FollowUp, User, RecycleItem, StaffLocation } from '../types';
 import { DEMO_ADMIN, DEMO_STAFF } from '../services/mockData';
-import { fetchTeamMembersDirectly } from '../services/firebase';
+import { fetchTeamMembersDirectly, subscribeRouteBreadcrumbs } from '../services/firebase';
 import { getDeviceModelInfo, getCityNameAsync, generatePlusCodeWithCityAsync } from '../utils/locationUtils';
 import { getLocalRouteLog, getSharedRouteLogs, addLocalBreadcrumb, RouteBreadcrumb } from '../utils/routeLogger';
 import { getSafePhotoDate, formatSafePhotoDate, formatSafePhotoDateTime } from '../services/dateUtils';
@@ -64,6 +64,17 @@ export default function AdminPanelView({
       DEMO_STAFF
     ];
   });
+
+  const [cloudBreadcrumbs, setCloudBreadcrumbs] = useState<RouteBreadcrumb[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeRouteBreadcrumbs((crumbs) => {
+      if (Array.isArray(crumbs)) {
+        setCloudBreadcrumbs(crumbs);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -158,6 +169,7 @@ export default function AdminPanelView({
         members={teamMembers}
         onUpdateMembers={saveTeamMembers}
         photos={photos}
+        cloudBreadcrumbs={cloudBreadcrumbs}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -200,7 +212,7 @@ export default function AdminPanelView({
 }
 
 // Staff / Team Members Management Section
-function StaffManagementSection({ members, onUpdateMembers, photos }: { members: User[], onUpdateMembers: (members: User[]) => void, photos?: Photo[] }) {
+function StaffManagementSection({ members, onUpdateMembers, photos, cloudBreadcrumbs = [] }: { members: User[], onUpdateMembers: (members: User[]) => void, photos?: Photo[], cloudBreadcrumbs?: RouteBreadcrumb[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
@@ -262,7 +274,7 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
     }
 
     // 2. Check shared route logs for this staff member
-    const logs = getSharedRouteLogs(m.id, m.name);
+    const logs = getSharedRouteLogs(m.id, m.name, cloudBreadcrumbs);
     if (logs && logs.length > 0) {
       const latestCrumb = logs[logs.length - 1];
       const crumbTime = new Date(latestCrumb.timestamp).getTime();
@@ -306,7 +318,7 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
 
   // Compute all route breadcrumb pings for a specific staff member (from shared pings + photo capture locations)
   const getMemberBreadcrumbs = (m: User): RouteBreadcrumb[] => {
-    const sharedLogs = getSharedRouteLogs(m.id, m.name);
+    const sharedLogs = getSharedRouteLogs(m.id, m.name, cloudBreadcrumbs);
     
     // Find all photos uploaded by this staff member (e.g. Amanpreet)
     const userPhotos = (photos || []).filter(p => 
@@ -315,21 +327,33 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
       (m.email && p.uploaderName && p.uploaderName.toLowerCase().includes(m.email.split('@')[0].toLowerCase()))
     );
 
-    const photoCrumbs: RouteBreadcrumb[] = userPhotos.map(p => ({
-      lat: p.site_lat !== undefined ? p.site_lat : (p.gps?.lat || 30.9010),
-      lng: p.site_lng !== undefined ? p.site_lng : (p.gps?.lng || 75.8573),
-      accuracy: 8,
-      timestamp: p.captureDate || p.uploadDate || new Date().toISOString(),
-      plusCode: p.plusCode || '8J52W724+8Q Ludhiana',
-      deviceInfo: p.deviceInfo || getDeviceModelInfo(),
-      userId: m.id,
-      userName: m.name
-    }));
+    const photoCrumbs: RouteBreadcrumb[] = userPhotos.map(p => {
+      let ts = p.captureDate || p.uploadDate;
+      if (!ts || isNaN(new Date(ts).getTime())) {
+        // Derive stable date string from photo ID to avoid changing timestamp on re-renders
+        const numMatch = (p.id || '').match(/\d+/);
+        if (numMatch && numMatch[0].length >= 10) {
+          const parsedMs = parseInt(numMatch[0]);
+          if (!isNaN(parsedMs)) ts = new Date(parsedMs).toISOString();
+        }
+      }
+      return {
+        lat: p.site_lat !== undefined ? p.site_lat : (p.gps?.lat || 30.9010),
+        lng: p.site_lng !== undefined ? p.site_lng : (p.gps?.lng || 75.8573),
+        accuracy: 8,
+        timestamp: ts && !isNaN(new Date(ts).getTime()) ? ts : '2025-01-15T09:30:00Z',
+        plusCode: p.plusCode || '8J52W724+8Q Ludhiana',
+        deviceInfo: p.deviceInfo || getDeviceModelInfo(),
+        userId: m.id,
+        userName: m.name
+      };
+    });
 
     // Merge shared pings + photo capture locations
     const map = new Map<string, RouteBreadcrumb>();
     [...sharedLogs, ...photoCrumbs].forEach(crumb => {
-      const timeKey = `${new Date(crumb.timestamp).getTime()}_${crumb.lat.toFixed(4)}_${crumb.lng.toFixed(4)}`;
+      const tsMs = new Date(crumb.timestamp).getTime();
+      const timeKey = `${crumb.userId || m.id}_${tsMs}_${crumb.lat.toFixed(5)}_${crumb.lng.toFixed(5)}`;
       map.set(timeKey, crumb);
     });
 
@@ -381,7 +405,9 @@ function StaffManagementSection({ members, onUpdateMembers, photos }: { members:
             accuracy,
             timestamp: freshLoc.timestamp,
             plusCode,
-            deviceInfo: devInfo
+            deviceInfo: devInfo,
+            userId: locationModalMember?.id || 'admin',
+            userName: locationModalMember?.name || 'Admin'
           });
 
           setLocationModalMember(prev => prev ? { ...prev, lastLocation: freshLoc } : null);

@@ -495,6 +495,13 @@ export default function App() {
     const handleGpsError = (err: GeolocationPositionError) => {
       if (err.code === err.PERMISSION_DENIED) {
         setGpsPermissionState('denied');
+      } else if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
+        // Retry with standard accuracy fallback (useful when indoors or in low GPS signal areas)
+        navigator.geolocation.getCurrentPosition(
+          updateUserLocation,
+          (fallbackErr) => console.warn("Fallback GPS error:", fallbackErr.message),
+          { enableHighAccuracy: false, timeout: 20000, maximumAge: 30000 }
+        );
       }
       console.warn("Live GPS position error:", err.message);
     };
