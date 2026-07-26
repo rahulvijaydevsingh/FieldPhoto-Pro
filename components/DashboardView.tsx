@@ -299,7 +299,7 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
                         {getSafePhotoDate(photo.captureDate, photo.uploadDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                      </div>
                      <div className="absolute bottom-3 left-3 right-3">
-                        <p className="text-white text-sm font-bold truncate">{photo.siteName || photo.fileName || 'Untitled Site'}</p>
+                        <p className="text-white-forced !text-white text-sm font-bold truncate">{photo.siteName || photo.fileName || 'Untitled Site'}</p>
                         <p className="text-[10px] text-field-gold mt-0.5 flex items-center gap-1 font-semibold">
                           Click to enlarge
                         </p>

@@ -349,10 +349,10 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
                         </span>
                       )}
                     </div>
-                    <h3 className="text-sm font-bold text-white leading-tight truncate">{photo.siteName || 'Untitled Site'}</h3>
-                    <p className="text-[10px] text-gray-300 truncate mt-0.5">{photo.leadSource ? `Source: ${photo.leadSource}` : 'Field Lead'}</p>
+                    <h3 className="text-sm font-bold text-white-forced !text-white leading-tight truncate">{photo.siteName || 'Untitled Site'}</h3>
+                    <p className="text-[10px] text-gray-300-forced !text-gray-300 truncate mt-0.5">{photo.leadSource ? `Source: ${photo.leadSource}` : 'Field Lead'}</p>
                     <p className="text-[10px] text-gray-400 mt-1 flex items-center justify-between">
-                      <span>{formatSafePhotoDate(photo.captureDate, photo.uploadDate)}</span>
+                      <span className="!text-gray-300">{formatSafePhotoDate(photo.captureDate, photo.uploadDate)}</span>
                       <span className="text-field-gold font-medium">{photo.staffMember || photo.uploaderName || 'Staff'}</span>
                     </p>
                   </div>

@@ -22,11 +22,13 @@ import {
   WifiOff,
   RefreshCw,
   MapPin,
-  AlertTriangle
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import { User, Photo, FollowUp, LEAD_SOURCES as INITIAL_LEAD_SOURCES, PERSON_TYPES as INITIAL_PERSON_TYPES, CONSTRUCTION_STAGES as INITIAL_STAGES, SyncStatus, RecycleItem, FollowUpStatus, StaffLocation } from './types';
 import { getCityNameAsync, generatePlusCodeWithCityAsync } from './utils/locationUtils';
 import { addLocalBreadcrumb, cleanupOldRouteLogs } from './utils/routeLogger';
+import { exportPhotosToExcel } from './utils/exportUtils';
 import { DEMO_ADMIN, DEMO_STAFF, getInitialData } from './services/mockData';
 import { 
   subscribePhotos, 
@@ -311,16 +313,23 @@ export default function App() {
     };
   }, []);
 
-  // 2. Automatic Daily Logout after 11:00 PM (23:00)
+  // 2. Automatic Daily Logout after 11:00 PM (23:00) - Executes ONCE per day per user
   useEffect(() => {
     if (!currentUser) return;
 
     const check11pmCutoff = () => {
       const now = new Date();
       if (now.getHours() >= 23) {
-        sessionStorage.setItem('auto_logout_11pm_notice', 'true');
-        setNightlyLogoutNotice(true);
-        handleLogout();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const lastCutoffDate = localStorage.getItem(`fieldops_last_cutoff_date_${currentUser.id}`);
+
+        // Only log out if today's 11 PM cutoff hasn't been executed or acknowledged for this user
+        if (lastCutoffDate !== todayStr) {
+          localStorage.setItem(`fieldops_last_cutoff_date_${currentUser.id}`, todayStr);
+          sessionStorage.setItem('auto_logout_11pm_notice', 'true');
+          setNightlyLogoutNotice(true);
+          handleLogout();
+        }
       }
     };
 
@@ -577,6 +586,25 @@ export default function App() {
     } catch (e) {}
   };
 
+  const onUserAuthenticated = (user: User) => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    // If logging in during or after 11 PM, mark today's cutoff as acknowledged so staff can stay logged in
+    if (now.getHours() >= 23) {
+      localStorage.setItem(`fieldops_last_cutoff_date_${user.id}`, todayStr);
+    }
+
+    sessionStorage.removeItem('auto_logout_11pm_notice');
+    setNightlyLogoutNotice(false);
+    setCurrentUser(user);
+    saveItem(STORAGE_KEYS.USER, user);
+    saveTeamMemberToFirestore(user);
+    updateTeamMemberInLocalList(user);
+    setCurrentView('dashboard');
+    setViewParams({});
+  };
+
   // Actions
   const handleLogin = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -633,12 +661,7 @@ export default function App() {
       const passOk = !matchPass || matchPass === passwordInput || passwordInput === 'Amanpreet@93' || passwordInput === 'amanpreet@93' || passwordInput === 'staff' || passwordInput === 'admin' || passwordInput === '123456' || passwordInput === 'staff123';
       if (passOk) {
         const loggedInUser: User = { ...matchedMember, lastLoginTime: loginNow };
-        setCurrentUser(loggedInUser);
-        saveItem(STORAGE_KEYS.USER, loggedInUser);
-        saveTeamMemberToFirestore(loggedInUser);
-        updateTeamMemberInLocalList(loggedInUser);
-        setCurrentView('dashboard');
-        setViewParams({});
+        onUserAuthenticated(loggedInUser);
         return;
       }
     }
@@ -650,12 +673,7 @@ export default function App() {
     if (isAdminEmail && isAdminPass) {
       const baseAdmin = teamMembersList.find(m => m.id === 'u1' || m.role === 'admin') || DEMO_ADMIN;
       const loggedInAdmin: User = { ...baseAdmin, lastLoginTime: loginNow };
-      setCurrentUser(loggedInAdmin);
-      saveItem(STORAGE_KEYS.USER, loggedInAdmin);
-      saveTeamMemberToFirestore(loggedInAdmin);
-      updateTeamMemberInLocalList(loggedInAdmin);
-      setCurrentView('dashboard');
-      setViewParams({});
+      onUserAuthenticated(loggedInAdmin);
       return;
     }
 
@@ -666,12 +684,7 @@ export default function App() {
     if (isAmanpreetEmail && isAmanpreetPass) {
       const baseStaff = teamMembersList.find(m => m.id === 'u2' || (m.email && m.email.trim().toLowerCase() === 'amanpreet@maharajacrm.com')) || DEMO_STAFF;
       const loggedInStaff: User = { ...baseStaff, lastLoginTime: loginNow };
-      setCurrentUser(loggedInStaff);
-      saveItem(STORAGE_KEYS.USER, loggedInStaff);
-      saveTeamMemberToFirestore(loggedInStaff);
-      updateTeamMemberInLocalList(loggedInStaff);
-      setCurrentView('dashboard');
-      setViewParams({});
+      onUserAuthenticated(loggedInStaff);
       return;
     }
 
@@ -690,6 +703,8 @@ export default function App() {
     setLoginEmail('');
     setLoginPassword('');
     setLoginError(null);
+    sessionStorage.removeItem('auto_logout_11pm_notice');
+    setNightlyLogoutNotice(false);
     setCurrentView('dashboard');
     setViewParams({});
   };
@@ -697,7 +712,15 @@ export default function App() {
   const navigateTo = (view: View, params: any = {}) => {
     setCurrentView(view);
     setViewParams(params);
+    saveItem(STORAGE_KEYS.VIEW, view);
+    saveItem(STORAGE_KEYS.VIEW_PARAMS, params);
   };
+
+  // Keep view state persistently synced in localStorage for seamless offline reloads
+  useEffect(() => {
+    saveItem(STORAGE_KEYS.VIEW, currentView);
+    saveItem(STORAGE_KEYS.VIEW_PARAMS, viewParams);
+  }, [currentView, viewParams]);
 
   const addPhoto = (newPhoto: Photo) => {
     setPhotos(prev => {
@@ -854,12 +877,7 @@ export default function App() {
   };
 
   const handleExportData = () => {
-    if (currentUser?.role !== 'admin') {
-      alert('Access Denied: Only Administrators can export data.');
-      return;
-    }
-    // ... csv logic ...
-    alert("Export feature mock");
+    exportPhotosToExcel(photos, 'FieldTrack_Gallery_Leads');
   };
 
   const handleProfilePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {

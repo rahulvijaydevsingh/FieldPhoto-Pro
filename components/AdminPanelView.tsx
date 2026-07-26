@@ -5,8 +5,9 @@ import { fetchTeamMembersDirectly } from '../services/firebase';
 import { getDeviceModelInfo, getCityNameAsync, generatePlusCodeWithCityAsync } from '../utils/locationUtils';
 import { getLocalRouteLog, getSharedRouteLogs, addLocalBreadcrumb, RouteBreadcrumb } from '../utils/routeLogger';
 import { getSafePhotoDate, formatSafePhotoDate, formatSafePhotoDateTime } from '../services/dateUtils';
+import { exportPhotosToExcel } from '../utils/exportUtils';
 import ReviewEditor from './ReviewEditor';
-import { Settings, Users, Database, FileText, Plus, Trash2, Tag, Hammer, Camera, Edit2, Check, X, Shield, UserCheck, RotateCcw, Search, Download, RefreshCw, MapPin, Calendar, Filter, Eye, Maximize2, Navigation, Radio, Zap, Info } from 'lucide-react';
+import { Settings, Users, Database, FileText, Plus, Trash2, Tag, Hammer, Camera, Edit2, Check, X, Shield, UserCheck, RotateCcw, Search, Download, RefreshCw, MapPin, Calendar, Filter, Eye, Maximize2, Navigation, Radio, Zap, Info, Clock } from 'lucide-react';
 
 interface Props {
   photos: Photo[];
@@ -1459,82 +1460,13 @@ function FieldTrackVisitsExplorer({
 
   const handleExportXLSX = () => {
     const recordsToExport = selectedIds.length > 0 
-      ? filteredRecords.filter(r => selectedIds.includes(r.id))
-      : filteredRecords;
+      ? filteredRecords.filter(r => selectedIds.includes(r.id)).map(r => r.originalPhoto)
+      : filteredRecords.map(r => r.originalPhoto);
 
-    if (recordsToExport.length === 0) {
-      alert("No visit records available to export. Please adjust your filters or upload a site photo.");
-      return;
-    }
-
-    const headers = [
-      "Site Name / Address",
-      "Primary Contact Name",
-      "Primary Contact Phone",
-      "Primary Designation",
-      "Firm Name",
-      "Secondary Contacts",
-      "Staff Member / Operator",
-      "Status",
-      "Lead Source",
-      "Construction Stage",
-      "Material Interests",
-      "Plus Code",
-      "Latitude, Longitude",
-      "Latitude",
-      "Longitude",
-      "Date & Time",
-      "Device Info",
-      "Follow-Up Priority",
-      "Notes / Remarks"
-    ];
-
-    const escapeCsv = (str: string | undefined | null) => {
-      const clean = (str || '').toString().replace(/"/g, '""');
-      return `"${clean}"`;
-    };
-
-    const rows = recordsToExport.map(r => {
-      const p = r.originalPhoto;
-      const primary = p.peopleMet && p.peopleMet[0] ? p.peopleMet[0] : null;
-      const secondary = p.peopleMet && p.peopleMet.length > 1 
-        ? p.peopleMet.slice(1).map(sec => `${sec.name || 'Contact'} (${sec.phone || ''} - ${sec.designation || ''})`).join(" | ")
-        : "";
-      const materials = (p.materialInterests || []).join("; ");
-
-      return [
-        escapeCsv(p.siteName || r.siteName),
-        escapeCsv(primary?.name || ''),
-        escapeCsv(primary?.phone || ''),
-        escapeCsv(primary?.designation || ''),
-        escapeCsv(primary?.firmName || ''),
-        escapeCsv(secondary),
-        escapeCsv(r.staffMember),
-        escapeCsv(r.status),
-        escapeCsv(p.leadSource || ''),
-        escapeCsv(p.constructionStage || ''),
-        escapeCsv(materials),
-        escapeCsv(p.plusCode || ''),
-        escapeCsv(`${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`),
-        r.lat.toFixed(6),
-        r.lng.toFixed(6),
-        escapeCsv(r.dateStr),
-        escapeCsv(r.deviceInfo),
-        escapeCsv(p.followUpPriority || ''),
-        escapeCsv(p.keyNotes || '')
-      ].join(",");
-    });
-
-    const csvData = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
-    const blob = new Blob([csvData], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `FieldTrack_Leads_${selectedIds.length > 0 ? 'Selected' : 'All'}_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    exportPhotosToExcel(
+      recordsToExport, 
+      `FieldTrack_Leads_${selectedIds.length > 0 ? 'Selected' : 'All'}`
+    );
   };
 
   return (

@@ -6,7 +6,7 @@ import { generatePlusCodeWithCitySync, generatePlusCodeWithCityAsync } from '../
 import { 
   Save, X, User as UserIcon, Users, MapPin, AlertCircle, Phone, Trash2, 
   CheckSquare, Square, Mail, Briefcase, Info, ShieldAlert, WifiOff, Search, Check, Globe,
-  FileText, Bookmark, CheckCircle2, RefreshCw, AlertTriangle, Plus
+  FileText, Bookmark, CheckCircle2, RefreshCw, AlertTriangle, Plus, Clock
 } from 'lucide-react';
 
 interface Props {

@@ -52,6 +52,104 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
     }
   }, []);
 
+  // Helper to robustly parse EXIF GPS coordinates (DMS, arrays, rationals, strings, Ref signs)
+  const parseExifCoordinate = (val: any, ref: any): number | undefined => {
+    if (val === undefined || val === null) return undefined;
+
+    let deg: number | undefined;
+
+    const parseSinglePart = (part: any): number | undefined => {
+      if (typeof part === 'number' && !isNaN(part)) return part;
+      if (typeof part === 'string') {
+        const p = parseFloat(part.trim());
+        if (!isNaN(p)) return p;
+      }
+      if (Array.isArray(part) && part.length === 2 && typeof part[0] === 'number' && typeof part[1] === 'number' && part[1] !== 0) {
+        return part[0] / part[1];
+      }
+      if (part && typeof part === 'object') {
+        if (typeof part.numerator === 'number' && typeof part.denominator === 'number' && part.denominator !== 0) {
+          return part.numerator / part.denominator;
+        }
+        if (typeof part.value === 'number' && !isNaN(part.value)) return part.value;
+        if (typeof part.description === 'number' && !isNaN(part.description)) return part.description;
+      }
+      return undefined;
+    };
+
+    // 1. Direct number
+    if (typeof val === 'number' && !isNaN(val)) {
+      deg = val;
+    }
+    // 2. String e.g. "30.690567" or DMS string "30° 41' 26.04\" N"
+    else if (typeof val === 'string') {
+      const trimmed = val.trim();
+      const directNum = parseFloat(trimmed);
+      if (!isNaN(directNum) && /^-?\d+(\.\d+)?$/.test(trimmed)) {
+        deg = directNum;
+      } else {
+        const dmsMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*°?\s*(\d+(?:\.\d+)?)\s*['′]?\s*(\d+(?:\.\d+)?)\s*["″]?/);
+        if (dmsMatch) {
+          const d = parseFloat(dmsMatch[1]);
+          const m = parseFloat(dmsMatch[2]);
+          const s = parseFloat(dmsMatch[3]);
+          if (!isNaN(d) && !isNaN(m) && !isNaN(s)) {
+            deg = d + (m / 60) + (s / 3600);
+          }
+        }
+      }
+    }
+    // 3. Array e.g. [30, 41, 26.04] or [[30,1], [41,1], [2604,100]]
+    else if (Array.isArray(val)) {
+      if (val.length === 3) {
+        const d = parseSinglePart(val[0]);
+        const m = parseSinglePart(val[1]);
+        const s = parseSinglePart(val[2]);
+        if (d !== undefined) {
+          deg = Math.abs(d) + ((m || 0) / 60) + ((s || 0) / 3600);
+          if (d < 0) deg = -deg;
+        }
+      } else if (val.length === 1) {
+        deg = parseSinglePart(val[0]);
+      }
+    }
+    // 4. Object
+    else if (typeof val === 'object') {
+      if (typeof val.description === 'number' && !isNaN(val.description)) {
+        deg = val.description;
+      } else if (typeof val.value === 'number' && !isNaN(val.value)) {
+        deg = val.value;
+      } else if (typeof val.description === 'string') {
+        return parseExifCoordinate(val.description, ref);
+      } else if (Array.isArray(val.value)) {
+        return parseExifCoordinate(val.value, ref);
+      } else if (val.numerator !== undefined && val.denominator !== undefined && val.denominator !== 0) {
+        deg = val.numerator / val.denominator;
+      }
+    }
+
+    if (deg === undefined || isNaN(deg)) return undefined;
+
+    // Apply Direction Reference (S or W means negative)
+    let refStr = '';
+    if (typeof ref === 'string') refStr = ref.trim().toUpperCase();
+    else if (ref && typeof ref.description === 'string') refStr = ref.description.trim().toUpperCase();
+    else if (ref && typeof ref.value === 'string') refStr = ref.value.trim().toUpperCase();
+    else if (Array.isArray(ref)) {
+      const first = ref[0];
+      if (typeof first === 'string') refStr = first.trim().toUpperCase();
+      else if (first && typeof first.description === 'string') refStr = first.description.trim().toUpperCase();
+    }
+
+    if (refStr === 'S' || refStr === 'W') {
+      deg = -Math.abs(deg);
+    } else if (refStr === 'N' || refStr === 'E') {
+      deg = Math.abs(deg);
+    }
+
+    return deg;
+  };
+
   // Extract EXIF GPS, device make/model, and photo creation timestamp directly from photo metadata
   const extractPhotoMeta = async (file: File, fallbackGps: { lat: number; lng: number }) => {
     try {
@@ -60,12 +158,37 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
       let captureDate: string | undefined;
       let deviceModel: string | undefined;
 
-      if (tags.gps && typeof tags.gps.Latitude === 'number' && typeof tags.gps.Longitude === 'number') {
-        const lat = tags.gps.Latitude;
-        const lng = tags.gps.Longitude;
-        if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
-          gps = { lat, lng };
+      // Extract GPS Coordinates safely
+      let rawLat: number | undefined;
+      let rawLng: number | undefined;
+
+      if (tags.gps) {
+        const latRef = tags.gps.LatitudeRef || tags.gps.GPSLatitudeRef;
+        const lngRef = tags.gps.LongitudeRef || tags.gps.GPSLongitudeRef;
+        rawLat = parseExifCoordinate(tags.gps.Latitude, latRef);
+        rawLng = parseExifCoordinate(tags.gps.Longitude, lngRef);
+      }
+
+      if ((rawLat === undefined || rawLng === undefined) && tags) {
+        const latRef = tags.GPSLatitudeRef || tags.image?.GPSLatitudeRef || tags.exif?.GPSLatitudeRef;
+        const lngRef = tags.GPSLongitudeRef || tags.image?.GPSLongitudeRef || tags.exif?.GPSLongitudeRef;
+        if (rawLat === undefined) {
+          rawLat = parseExifCoordinate(tags.GPSLatitude || tags.image?.GPSLatitude || tags.exif?.GPSLatitude, latRef);
         }
+        if (rawLng === undefined) {
+          rawLng = parseExifCoordinate(tags.GPSLongitude || tags.image?.GPSLongitude || tags.exif?.GPSLongitude, lngRef);
+        }
+      }
+
+      if (rawLat !== undefined && rawLng !== undefined && !isNaN(rawLat) && !isNaN(rawLng)) {
+        if (rawLat >= -90 && rawLat <= 90 && rawLng >= -180 && rawLng <= 180 && (rawLat !== 0 || rawLng !== 0)) {
+          gps = { lat: rawLat, lng: rawLng };
+          console.log(`✅ EXIF GPS extracted: lat=${rawLat}, lng=${rawLng}`);
+        } else {
+          console.warn(`⚠️ EXIF GPS invalid/out-of-bounds: lat=${rawLat}, lng=${rawLng}`);
+        }
+      } else {
+        console.log(`ℹ️ No valid EXIF GPS tags found in image. Using device location fallback.`);
       }
 
       // Check Exif Tags for Camera Make & Model

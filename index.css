@@ -66,6 +66,38 @@ body {
   color: #0f172a !important;
 }
 
+/* Force white text to remain white over dark photo overlays, image gradients, and dark buttons in light/high-contrast modes */
+.theme-light .text-white-forced,
+.theme-high-contrast .text-white-forced,
+.theme-light [class*="from-black"] .text-white,
+.theme-light [class*="from-slate"] .text-white,
+.theme-light [class*="bg-black"] .text-white,
+.theme-light [class*="bg-slate-9"] .text-white,
+.theme-light [class*="bg-slate-8"] .text-white,
+.theme-high-contrast [class*="from-black"] .text-white,
+.theme-high-contrast [class*="from-slate"] .text-white,
+.theme-high-contrast [class*="bg-black"] .text-white,
+.theme-high-contrast [class*="bg-slate-9"] .text-white,
+.theme-high-contrast [class*="bg-slate-8"] .text-white {
+  color: #ffffff !important;
+}
+
+.theme-light .text-gray-300-forced,
+.theme-high-contrast .text-gray-300-forced,
+.theme-light [class*="from-black"] .text-gray-300,
+.theme-light [class*="from-slate"] .text-gray-300,
+.theme-high-contrast [class*="from-black"] .text-gray-300,
+.theme-high-contrast [class*="from-slate"] .text-gray-300 {
+  color: #e2e8f0 !important;
+}
+
+.theme-light [class*="from-black"] .text-gray-400,
+.theme-light [class*="from-slate"] .text-gray-400,
+.theme-high-contrast [class*="from-black"] .text-gray-400,
+.theme-high-contrast [class*="from-slate"] .text-gray-400 {
+  color: #cbd5e1 !important;
+}
+
 .theme-light .border-\[\#3A2E2E\],
 .theme-light .border-\[\#443535\],
 .theme-light .border-\[\#2D2424\] {
