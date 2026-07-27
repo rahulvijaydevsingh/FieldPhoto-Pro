@@ -26,12 +26,31 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
     .filter(p => p.status === 'new')
     .filter(p => {
       if (user.role === 'admin') return true;
-      const userNameLower = (user.name || '').toLowerCase();
-      return (
-        p.uploaderId === user.id ||
-        (p.uploaderName && p.uploaderName.toLowerCase() === userNameLower) ||
-        (p.staffMember && p.staffMember.toLowerCase() === userNameLower)
-      );
+      const userNameLower = (user.name || '').trim().toLowerCase();
+      const userEmailLower = (user.email || '').trim().toLowerCase();
+      const userIdLower = (user.id || '').trim().toLowerCase();
+
+      const pUploaderId = (p.uploaderId || '').trim().toLowerCase();
+      const pUploaderName = (p.uploaderName || '').trim().toLowerCase();
+      const pStaffMember = (p.staffMember || '').trim().toLowerCase();
+
+      // 1. Exact ID or Email match
+      if (pUploaderId && (pUploaderId === userIdLower || pUploaderId === userEmailLower)) return true;
+
+      // 2. Name or Email substring match
+      if (pUploaderName && (pUploaderName === userNameLower || pUploaderName === userEmailLower || userNameLower.includes(pUploaderName) || pUploaderName.includes(userNameLower))) return true;
+      if (pStaffMember && (pStaffMember === userNameLower || pStaffMember === userEmailLower || userNameLower.includes(pStaffMember) || pStaffMember.includes(userNameLower))) return true;
+
+      // 3. Email prefix match (e.g. "rahul" from "rahul@gmail.com")
+      const userEmailPrefix = userEmailLower.split('@')[0];
+      if (userEmailPrefix && userEmailPrefix.length >= 3) {
+        if (pUploaderName.includes(userEmailPrefix) || pStaffMember.includes(userEmailPrefix) || pUploaderId.includes(userEmailPrefix)) return true;
+      }
+
+      // 4. Fallback for un-attributed new uploads in current session
+      if (!pUploaderId && !pUploaderName && !pStaffMember) return true;
+
+      return false;
     })
     .sort((a, b) => getSafePhotoDate(b.captureDate, b.uploadDate).getTime() - getSafePhotoDate(a.captureDate, a.uploadDate).getTime());
 

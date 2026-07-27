@@ -2,7 +2,7 @@
 // Stores breadcrumbs in local device storage without consuming cloud write quotas
 
 import { getDeviceModelInfo } from './locationUtils';
-import { saveRouteBreadcrumbToFirestore } from '../services/firebase';
+import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
 
 export interface RouteBreadcrumb {
   lat: number;
@@ -74,7 +74,7 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       window.dispatchEvent(new Event('fieldops_sync'));
 
       // Sync breadcrumb to Firestore for cross-device visibility
-      saveRouteBreadcrumbToFirestore(point).catch(e => console.warn('Breadcrumb cloud sync warning:', e));
+      breadcrumbRepository.save(point).catch(e => console.warn('Breadcrumb cloud sync warning:', e));
     } catch (e) {}
 
     return trimmed;
@@ -127,10 +127,20 @@ export function getSharedRouteLogs(userId?: string, userName?: string, cloudBrea
       const uidLower = (userId || '').trim().toLowerCase();
       const uNameLower = (userName || '').trim().toLowerCase();
       
-      combined = combined.filter(b => {
+      const userMatched = combined.filter(b => {
         if (b.userId && uidLower && b.userId.toLowerCase() === uidLower) return true;
         if (b.userName && uNameLower && b.userName.toLowerCase().includes(uNameLower)) return true;
         return false;
+      });
+
+      const hasMobilePings = userMatched.some(b => b.deviceInfo && !b.deviceInfo.includes('Windows') && !b.deviceInfo.includes('Mac'));
+
+      combined = userMatched.filter(b => {
+        // If staff member has mobile pings, ignore accidental Admin Windows PC pings
+        if (hasMobilePings && b.deviceInfo && (b.deviceInfo.includes('Windows') || b.deviceInfo.includes('Mac'))) {
+          return false;
+        }
+        return true;
       });
     }
 

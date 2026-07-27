@@ -6,6 +6,7 @@ import ExifReader from 'exifreader';
 import { generatePlusCodeWithCitySync, generatePlusCodeWithCityAsync, getDeviceModelInfo } from '../utils/locationUtils';
 import { addLocalBreadcrumb } from '../utils/routeLogger';
 import { isValidPhotoDate } from '../services/dateUtils';
+import { createPhoto } from '../factories/photoFactory';
 
 interface Props {
   user: User;
@@ -259,46 +260,57 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
   // Helper to compress camera/gallery images into web-optimized JPEG data URL
   const compressImageFile = (file: File): Promise<string> => {
     return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const maxWidth = 1200;
-          const maxHeight = 1200;
-          let width = img.width;
-          let height = img.height;
+      try {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const dataUrlStr = (e.target?.result as string) || '';
+            const img = new Image();
+            img.onload = () => {
+              try {
+                const maxWidth = 900;
+                const maxHeight = 900;
+                let width = img.width;
+                let height = img.height;
 
-          if (width > maxWidth || height > maxHeight) {
-            if (width > height) {
-              height = Math.round((height * maxWidth) / width);
-              width = maxWidth;
-            } else {
-              width = Math.round((width * maxHeight) / height);
-              height = maxHeight;
-            }
-          }
+                if (width > maxWidth || height > maxHeight) {
+                  if (width > height) {
+                    height = Math.round((height * maxWidth) / width);
+                    width = maxWidth;
+                  } else {
+                    width = Math.round((width * maxHeight) / height);
+                    height = maxHeight;
+                  }
+                }
 
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-            resolve(compressedDataUrl);
-          } else {
-            resolve((e.target?.result as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop');
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0, width, height);
+                  const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.65);
+                  resolve(compressedDataUrl || dataUrlStr);
+                } else {
+                  resolve(dataUrlStr);
+                }
+              } catch (err) {
+                resolve(dataUrlStr);
+              }
+            };
+            img.onerror = () => resolve(dataUrlStr);
+            img.src = dataUrlStr;
+          } catch (err) {
+            resolve('');
           }
         };
-        img.onerror = () => resolve((e.target?.result as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop');
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => resolve('https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop');
-      reader.readAsDataURL(file);
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      } catch (err) {
+        resolve('');
+      }
     });
   };
-
-
 
   // Helper to determine clean site address from raw filename
   const getCleanSiteName = (filename: string): string => {
@@ -311,37 +323,39 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
     return base;
   };
 
-  // Simulate file handling
-  const handleFiles = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  // Synchronous file handling prevents e.target.value = '' from clearing FileList before async callbacks
+  const handleFiles = (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+
+    // Convert FileList immediately into JS Array synchronously
+    const filesArray = Array.from(fileList);
 
     // Default to tracked user location or cached GPS (Mohali baseline)
     let currentGps = user.lastLocation 
       ? { lat: user.lastLocation.lat, lng: user.lastLocation.lng } 
       : cachedGps;
 
+    // Immediately start processing files without waiting for async geolocation blocking
+    processFiles(filesArray, currentGps);
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          currentGps = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          processFiles(files, currentGps);
+          // Fast background GPS update if available
+          setCachedGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         },
-        () => {
-          processFiles(files, currentGps);
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        () => {},
+        { enableHighAccuracy: true, timeout: 3000, maximumAge: 10000 }
       );
-    } else {
-      processFiles(files, currentGps);
     }
   };
 
-  const processFiles = (files: FileList, gpsCoords: { lat: number, lng: number }) => {
-    const newUploads = Array.from(files).map(file => ({
+  const processFiles = (files: File[], gpsCoords: { lat: number, lng: number }) => {
+    const newUploads = files.map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
-      progress: 0,
-      status: 'waiting' as const,
+      progress: 10,
+      status: 'uploading' as const,
       url: URL.createObjectURL(file),
       file: file
     }));
@@ -376,7 +390,7 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
 
           const capturedDevName = meta.deviceModel || getDeviceModelInfo();
 
-          const newPhoto: Photo = {
+          const newPhoto = createPhoto({
             id: 'lead_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
             url: dataUrl,
             fileName: file.name,
@@ -395,7 +409,7 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
             plusCode: plusCodeStr,
             locationSource: meta.source,
             deviceInfo: capturedDevName
-          };
+          });
           // Record route breadcrumb for staff member automatically
           addLocalBreadcrumb({
             lat: finalGps.lat,
@@ -507,50 +521,52 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
       </div>
 
       {/* Upload List */}
-      <div className="space-y-4">
-         <h3 className="text-white font-bold text-lg flex items-center gap-2">
-            Uploading {uploads.filter(u => u.status !== 'done').length} items...
-            <span className="w-2 h-2 bg-field-gold rounded-full animate-pulse"></span>
-         </h3>
+      {uploads.length > 0 && (
+        <div className="space-y-4">
+           <h3 className="text-white font-bold text-lg flex items-center gap-2">
+              Uploading {uploads.filter(u => u.status !== 'done').length} items...
+              <span className="w-2 h-2 bg-field-gold rounded-full animate-pulse"></span>
+           </h3>
 
-         {uploads.map(upload => (
-            <div key={upload.id} className="bg-[#2D2424] border border-[#3A2E2E] rounded-xl p-3 flex gap-3 relative overflow-hidden">
-               {/* Progress Bar Background */}
-               <div 
-                  className="absolute bottom-0 left-0 h-1 bg-field-gold transition-all duration-300" 
-                  style={{ width: `${upload.progress}%` }}
-               ></div>
+           {uploads.map(upload => (
+              <div key={upload.id} className="bg-[#2D2424] border border-[#3A2E2E] rounded-xl p-3 flex gap-3 relative overflow-hidden">
+                 {/* Progress Bar Background */}
+                 <div 
+                    className="absolute bottom-0 left-0 h-1 bg-field-gold transition-all duration-300" 
+                    style={{ width: `${upload.progress}%` }}
+                 ></div>
 
-               <div className="w-16 h-16 bg-black rounded-lg overflow-hidden flex-shrink-0">
-                  <img src={upload.url} className="w-full h-full object-cover" />
-               </div>
-               
-               <div className="flex-1 flex flex-col justify-center">
-                  <div className="flex justify-between items-start mb-1">
-                     <h4 className="text-white font-medium text-sm truncate max-w-[150px]">{upload.name}</h4>
-                     {upload.status === 'done' ? (
-                        <span className="text-xs text-green-500 font-bold">100%</span>
-                     ) : (
-                        <span className="text-xs text-field-gold font-bold">{Math.round(upload.progress)}%</span>
-                     )}
-                  </div>
-                  
-                  {upload.status === 'waiting' && <span className="text-xs text-field-textMuted">Waiting...</span>}
-                  {upload.status === 'uploading' && <span className="text-xs text-field-gold animate-pulse">Uploading...</span>}
-                  {upload.status === 'done' && <span className="text-xs text-green-500">Complete</span>}
-               </div>
+                 <div className="w-16 h-16 bg-black rounded-lg overflow-hidden flex-shrink-0">
+                    <img src={upload.url} className="w-full h-full object-cover" />
+                 </div>
+                 
+                 <div className="flex-1 flex flex-col justify-center">
+                    <div className="flex justify-between items-start mb-1">
+                       <h4 className="text-white font-medium text-sm truncate max-w-[150px]">{upload.name}</h4>
+                       {upload.status === 'done' ? (
+                          <span className="text-xs text-green-500 font-bold">100%</span>
+                       ) : (
+                          <span className="text-xs text-field-gold font-bold">{Math.round(upload.progress)}%</span>
+                       )}
+                    </div>
+                    
+                    {upload.status === 'waiting' && <span className="text-xs text-field-textMuted">Waiting...</span>}
+                    {upload.status === 'uploading' && <span className="text-xs text-field-gold animate-pulse">Uploading...</span>}
+                    {upload.status === 'done' && <span className="text-xs text-green-500">Complete</span>}
+                 </div>
 
-               <div className="flex items-center gap-2 pr-2">
-                  {upload.status !== 'done' && (
-                     <button className="text-field-textMuted hover:text-white" onClick={() => removeUpload(upload.id)}>
-                        <X size={18} />
-                     </button>
-                  )}
-                  {upload.status === 'waiting' && <button className="text-field-textMuted"><Pause size={18} /></button>}
-               </div>
-            </div>
-         ))}
-      </div>
+                 <div className="flex items-center gap-2 pr-2">
+                    {upload.status !== 'done' && (
+                       <button className="text-field-textMuted hover:text-white" onClick={() => removeUpload(upload.id)}>
+                          <X size={18} />
+                       </button>
+                    )}
+                    {upload.status === 'waiting' && <button className="text-field-textMuted"><Pause size={18} /></button>}
+                 </div>
+              </div>
+           ))}
+        </div>
+      )}
     </div>
   );
 }

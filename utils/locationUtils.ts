@@ -135,6 +135,25 @@ export async function generatePlusCodeWithCityAsync(lat: number, lng: number): P
  * Smart device model detection that extracts clean readable device info
  * avoiding privacy masking tokens like "Android (K)"
  */
+export function getTimeAge(timestamp: string): string {
+  if (!timestamp) return 'Unknown';
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  if (diffMs < 60000) return 'Just now (< 1 min ago)';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  return `${Math.floor(hours / 24)} days ago`;
+}
+
+export function getMemberBreadcrumbs(crumbs: any[], memberId: string, memberName: string) {
+  if (!crumbs || !Array.isArray(crumbs)) return [];
+  return crumbs.filter(c => 
+    (c.memberId && c.memberId === memberId) || 
+    (c.memberName && memberName && c.memberName.toLowerCase().trim() === memberName.toLowerCase().trim())
+  );
+}
+
 export function getDeviceModelInfo(): string {
   if (typeof navigator === 'undefined') return 'Mobile Device';
   

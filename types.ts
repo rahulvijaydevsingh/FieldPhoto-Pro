@@ -1,6 +1,10 @@
 
 export type Role = 'admin' | 'staff';
 
+export const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%232D2424' stroke='%23D99026' stroke-width='1.5'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/><circle cx='12' cy='7' r='4'/></svg>";
+
+export type View = 'dashboard' | 'upload' | 'gallery' | 'pending' | 'admin' | 'profile' | 'followups';
+
 export type Priority = 'High' | 'Medium' | 'Low';
 
 // Updated to match CRM Status Enum
@@ -34,6 +38,8 @@ export interface User {
   lastLocation?: StaffLocation;
   lastLoginTime?: string;
   lastLogoutTime?: string;
+  lastSeenTime?: string;
+  isOnline?: boolean;
   themePreference?: 'dark' | 'light' | 'high-contrast';
 }
 
