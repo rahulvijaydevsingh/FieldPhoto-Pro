@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { StaffLocation } from '../types';
 import { getCityNameAsync, generatePlusCodeWithCityAsync, getDeviceModelInfo } from '../utils/locationUtils';
 import { addLocalBreadcrumb } from '../utils/routeLogger';
+import { fallbackGeoEngine } from './geolocation/FallbackGeolocationEngine';
 
 interface UseGpsEngineOptions {
   userId?: string;
@@ -15,7 +16,7 @@ export function useGpsEngine({ userId, userName, enabled = true }: UseGpsEngineO
   const watchIdRef = useRef<number | null>(null);
   const isSubscribedRef = useRef(true);
 
-  const updateLocation = useCallback(async (pos: GeolocationPosition) => {
+  const updateLocation = useCallback(async (pos: GeolocationPosition | { coords: { latitude: number; longitude: number; accuracy: number } }) => {
     if (!isSubscribedRef.current) return;
     
     const lat = pos.coords.latitude;
@@ -54,17 +55,25 @@ export function useGpsEngine({ userId, userName, enabled = true }: UseGpsEngineO
     }
   }, [userId, userName]);
 
-  const handleError = useCallback((err: GeolocationPositionError) => {
+  const handleError = useCallback(async (err: GeolocationPositionError) => {
     if (err.code === err.PERMISSION_DENIED) {
       setGpsPermissionState('denied');
-    } else if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
-      navigator.geolocation.getCurrentPosition(
-        updateLocation,
-        (fallbackErr) => console.warn('Fallback GPS error:', fallbackErr.message),
-        { enableHighAccuracy: false, timeout: 20000, maximumAge: 30000 }
-      );
+      return;
     }
-    console.warn('Live GPS position error:', err.message);
+    
+    // Trigger Strategy Pattern Cell/Wi-Fi Fallback Engine
+    try {
+      const fallbackResult = await fallbackGeoEngine.getPosition();
+      updateLocation({
+        coords: {
+          latitude: fallbackResult.lat,
+          longitude: fallbackResult.lng,
+          accuracy: fallbackResult.accuracy,
+        }
+      });
+    } catch (fallbackErr) {
+      console.warn('Geolocation fallback chain error:', fallbackErr);
+    }
   }, [updateLocation]);
 
   useEffect(() => {

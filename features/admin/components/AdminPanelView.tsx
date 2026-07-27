@@ -7,6 +7,7 @@ import RecycleBin from './RecycleBin';
 import VisitsExplorer from './VisitsExplorer';
 import StaffManagement from './StaffManagement';
 import DevPlaybook from './DevPlaybook';
+import GeolocationInspector from './GeolocationInspector';
 import { Database, Users, Tag, Hammer, FileText, BookOpen } from 'lucide-react';
 
 interface AdminPanelViewProps {
@@ -184,6 +185,9 @@ export default function AdminPanelView({
         photos={photos}
         cloudBreadcrumbs={cloudBreadcrumbs}
       />
+
+      {/* Geolocation Strategy Engine Inspector */}
+      <GeolocationInspector />
 
       {/* Master Configuration Lists */}
       <div className="space-y-4">
