@@ -294,8 +294,9 @@ export const useAppStore = create<AppStore>()(
               map.set(p.id, p);
             }
           });
+          // Retain local photos if they are not in recycleBin, so no local capture is ever lost
           state.photos.forEach((localP) => {
-            if (!map.has(localP.id) && !recyclePhotoIds.has(localP.id) && localP.syncStatus === 'pending') {
+            if (localP && localP.id && !map.has(localP.id) && !recyclePhotoIds.has(localP.id)) {
               map.set(localP.id, localP);
             }
           });

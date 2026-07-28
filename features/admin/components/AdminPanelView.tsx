@@ -11,7 +11,7 @@ import GeolocationInspector from './GeolocationInspector';
 import PipelineInspector from './PipelineInspector';
 import BufferInspector from './BufferInspector';
 import OfflineSyncInspector from './OfflineSyncInspector';
-import { Database, Users, Tag, Hammer, FileText, BookOpen } from 'lucide-react';
+import { Database, Users, Tag, Hammer, FileText, BookOpen, MapPin, Activity, Settings, Trash2, LayoutGrid, Radio } from 'lucide-react';
 
 interface AdminPanelViewProps {
   photos: Photo[];
@@ -31,6 +31,8 @@ interface AdminPanelViewProps {
   onUpdateTeamMembers?: (members: User[]) => void;
 }
 
+type AdminTab = 'visits' | 'staff' | 'diagnostics' | 'config';
+
 export default function AdminPanelView({ 
   photos, 
   followUps, 
@@ -41,6 +43,7 @@ export default function AdminPanelView({
   recycleBin, onRestoreFromRecycleBin, onPermanentlyDeleteFromRecycleBin, onEmptyRecycleBin,
   onUpdateTeamMembers
 }: AdminPanelViewProps) {
+  const [activeTab, setActiveTab] = useState<AdminTab>('visits');
   const [teamMembers, setTeamMembers] = useState<User[]>(() => {
     const saved = localStorage.getItem('fieldops_team_members');
     if (saved) {
@@ -109,8 +112,9 @@ export default function AdminPanelView({
   }
 
   return (
-    <div className="space-y-8 bg-[#1A1515] min-h-screen text-white pb-24">
-      <div className="border-b border-[#3A2E2E] pb-4 mb-6 flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-6 bg-[#1A1515] min-h-screen text-white pb-24">
+      {/* Header */}
+      <div className="border-b border-[#3A2E2E] pb-4 flex flex-wrap items-center justify-between gap-4">
          <div>
             <div className="flex items-center gap-3">
                <h2 className="text-2xl font-bold text-white">FieldTrack Dashboard</h2>
@@ -130,110 +134,188 @@ export default function AdminPanelView({
          </button>
       </div>
 
-      {/* FieldTrack Dashboard - Visits Records Explorer */}
-      <VisitsExplorer 
-        photos={photos} 
-        onUpdatePhoto={onUpdatePhoto}
-        onDeletePhoto={onDeletePhoto}
-        constructionStages={constructionStages}
-        leadSources={leadSources}
-        personTypes={personTypes}
-        teamMembers={teamMembers}
-      />
+      {/* Admin Panel Sub-Navigation Tabs */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#3A2E2E] pb-3">
+        <button
+          onClick={() => setActiveTab('visits')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'visits'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <LayoutGrid size={15} /> Site Visits Explorer
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-md bg-black/20 font-mono font-bold">
+            {photos.length}
+          </span>
+        </button>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <div className="bg-[#2D2424] p-6 rounded-xl shadow-lg border border-[#3A2E2E]">
-            <h3 className="text-xs font-bold text-field-textMuted uppercase tracking-wider mb-2">Total System Data</h3>
-            <div className="flex justify-between items-end">
-               <div>
-                  <p className="text-4xl font-bold text-white mb-1">{photos.length}</p>
-                  <p className="text-xs text-gray-500">Photos stored</p>
-               </div>
-               <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
-                  <Database size={24} />
-               </div>
-            </div>
-         </div>
-         <div className="bg-[#2D2424] p-6 rounded-xl shadow-lg border border-[#3A2E2E]">
-            <h3 className="text-xs font-bold text-field-textMuted uppercase tracking-wider mb-2">Team Members</h3>
-            <div className="flex justify-between items-end">
-               <div>
-                  <p className="text-4xl font-bold text-white mb-1">{teamMembers.length}</p>
-                  <p className="text-xs text-gray-500">Active users</p>
-               </div>
-               <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
-                  <Users size={24} />
-               </div>
-            </div>
-         </div>
-         <div className="bg-[#2D2424] p-6 rounded-xl shadow-lg border border-[#3A2E2E]">
-            <h3 className="text-xs font-bold text-field-textMuted uppercase tracking-wider mb-2">Active Follow-ups</h3>
-            <div className="flex justify-between items-end">
-               <div>
-                  <p className="text-4xl font-bold text-white mb-1">{followUps.filter(f => f.status === 'pending').length}</p>
-                  <p className="text-xs text-gray-500">Tasks pending</p>
-               </div>
-               <div className="w-12 h-12 rounded-full bg-field-gold/10 flex items-center justify-center text-field-gold">
-                  <FileText size={24} />
-               </div>
-            </div>
-         </div>
+        <button
+          onClick={() => setActiveTab('staff')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'staff'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <Users size={15} /> Staff & Live Tracking
+          <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-md bg-black/20 font-mono font-bold">
+            {teamMembers.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('diagnostics')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'diagnostics'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <Activity size={15} /> System Diagnostics & Sync Engine
+        </button>
+
+        <button
+          onClick={() => setActiveTab('config')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'config'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <Settings size={15} /> Config Lists & Trash
+          {recycleBin.length > 0 && (
+            <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-md bg-rose-500 text-white font-mono font-bold">
+              {recycleBin.length}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Staff Management Section */}
-      <StaffManagement 
-        members={teamMembers}
-        onUpdateMembers={saveTeamMembers}
-        photos={photos}
-        cloudBreadcrumbs={cloudBreadcrumbs}
-      />
+      {/* TAB 1: Site Visits Explorer & Quick Stats */}
+      {activeTab === 'visits' && (
+        <div className="space-y-6">
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div className="bg-[#2D2424] p-6 rounded-xl shadow-lg border border-[#3A2E2E]">
+                <h3 className="text-xs font-bold text-field-textMuted uppercase tracking-wider mb-2">Total System Data</h3>
+                <div className="flex justify-between items-end">
+                   <div>
+                      <p className="text-4xl font-bold text-white mb-1">{photos.length}</p>
+                      <p className="text-xs text-gray-500">Photos stored</p>
+                   </div>
+                   <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
+                      <Database size={24} />
+                   </div>
+                </div>
+             </div>
+             <div className="bg-[#2D2424] p-6 rounded-xl shadow-lg border border-[#3A2E2E]">
+                <h3 className="text-xs font-bold text-field-textMuted uppercase tracking-wider mb-2">Team Members</h3>
+                <div className="flex justify-between items-end">
+                   <div>
+                      <p className="text-4xl font-bold text-white mb-1">{teamMembers.length}</p>
+                      <p className="text-xs text-gray-500">Active users</p>
+                   </div>
+                   <div className="w-12 h-12 rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
+                      <Users size={24} />
+                   </div>
+                </div>
+             </div>
+             <div className="bg-[#2D2424] p-6 rounded-xl shadow-lg border border-[#3A2E2E]">
+                <h3 className="text-xs font-bold text-field-textMuted uppercase tracking-wider mb-2">Active Follow-ups</h3>
+                <div className="flex justify-between items-end">
+                   <div>
+                      <p className="text-4xl font-bold text-white mb-1">{followUps.filter(f => f.status === 'pending').length}</p>
+                      <p className="text-xs text-gray-500">Tasks pending</p>
+                   </div>
+                   <div className="w-12 h-12 rounded-full bg-field-gold/10 flex items-center justify-center text-field-gold">
+                      <FileText size={24} />
+                   </div>
+                </div>
+             </div>
+          </div>
 
-      {/* Geolocation Strategy Engine Inspector */}
-      <GeolocationInspector />
-
-      {/* Post-Processing Ingestion Handler Chain Pipeline Inspector */}
-      <PipelineInspector currentUser={DEMO_ADMIN} />
-
-      {/* Client-Side Offline-First Sync Architecture (Photos + Staff Tracking) Inspector */}
-      <OfflineSyncInspector />
-
-      {/* Write-Behind Queue & Circuit Breaker Buffering Inspector */}
-      <BufferInspector />
-
-      {/* Master Configuration Lists */}
-      <div className="space-y-4">
-        <h3 className="text-xl font-bold text-white">Master Configuration Lists</h3>
-        <p className="text-xs text-gray-400">Configure drop-down options available across the mobile site visit entry form.</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <ConfigCard 
-            title="Lead Sources" 
-            icon={Tag} 
-            items={leadSources} 
-            onUpdate={onUpdateLeadSources} 
-          />
-          <ConfigCard 
-            title="Person Met Types" 
-            icon={Users} 
-            items={personTypes} 
-            onUpdate={onUpdatePersonTypes} 
-          />
-          <ConfigCard 
-            title="Construction Stages" 
-            icon={Hammer} 
-            items={constructionStages} 
-            onUpdate={onUpdateConstructionStages} 
+          {/* FieldTrack Dashboard - Visits Records Explorer */}
+          <VisitsExplorer 
+            photos={photos} 
+            onUpdatePhoto={onUpdatePhoto}
+            onDeletePhoto={onDeletePhoto}
+            constructionStages={constructionStages}
+            leadSources={leadSources}
+            personTypes={personTypes}
+            teamMembers={teamMembers}
           />
         </div>
-      </div>
+      )}
 
-      {/* Recycle Bin / Deleted Items */}
-      <RecycleBin 
-        items={recycleBin}
-        onRestore={onRestoreFromRecycleBin}
-        onPermanentDelete={onPermanentlyDeleteFromRecycleBin}
-        onEmpty={onEmptyRecycleBin}
-      />
+      {/* TAB 2: Staff Management & Live GPS Tracking */}
+      {activeTab === 'staff' && (
+        <div className="space-y-6">
+          <StaffManagement 
+            members={teamMembers}
+            onUpdateMembers={saveTeamMembers}
+            photos={photos}
+            cloudBreadcrumbs={cloudBreadcrumbs}
+          />
+
+          {/* Geolocation Strategy Engine Inspector */}
+          <GeolocationInspector />
+        </div>
+      )}
+
+      {/* TAB 3: System Diagnostics & Offline Sync */}
+      {activeTab === 'diagnostics' && (
+        <div className="space-y-6">
+          {/* Client-Side Offline-First Sync Architecture (Photos + Staff Tracking) Inspector */}
+          <OfflineSyncInspector />
+
+          {/* Write-Behind Queue & Circuit Breaker Buffering Inspector */}
+          <BufferInspector />
+
+          {/* Post-Processing Ingestion Handler Chain Pipeline Inspector */}
+          <PipelineInspector currentUser={DEMO_ADMIN} />
+        </div>
+      )}
+
+      {/* TAB 4: Master Configurations & Recycle Bin */}
+      {activeTab === 'config' && (
+        <div className="space-y-8">
+          {/* Master Configuration Lists */}
+          <div className="space-y-4">
+            <h3 className="text-xl font-bold text-white">Master Configuration Lists</h3>
+            <p className="text-xs text-gray-400">Configure drop-down options available across the mobile site visit entry form.</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <ConfigCard 
+                title="Lead Sources" 
+                icon={Tag} 
+                items={leadSources} 
+                onUpdate={onUpdateLeadSources} 
+              />
+              <ConfigCard 
+                title="Person Met Types" 
+                icon={Users} 
+                items={personTypes} 
+                onUpdate={onUpdatePersonTypes} 
+              />
+              <ConfigCard 
+                title="Construction Stages" 
+                icon={Hammer} 
+                items={constructionStages} 
+                onUpdate={onUpdateConstructionStages} 
+              />
+            </div>
+          </div>
+
+          {/* Recycle Bin / Deleted Items */}
+          <RecycleBin 
+            items={recycleBin}
+            onRestore={onRestoreFromRecycleBin}
+            onPermanentDelete={onPermanentlyDeleteFromRecycleBin}
+            onEmpty={onEmptyRecycleBin}
+          />
+        </div>
+      )}
     </div>
   );
 }
+
