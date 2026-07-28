@@ -8,6 +8,9 @@ import VisitsExplorer from './VisitsExplorer';
 import StaffManagement from './StaffManagement';
 import DevPlaybook from './DevPlaybook';
 import GeolocationInspector from './GeolocationInspector';
+import PipelineInspector from './PipelineInspector';
+import BufferInspector from './BufferInspector';
+import OfflineSyncInspector from './OfflineSyncInspector';
 import { Database, Users, Tag, Hammer, FileText, BookOpen } from 'lucide-react';
 
 interface AdminPanelViewProps {
@@ -188,6 +191,15 @@ export default function AdminPanelView({
 
       {/* Geolocation Strategy Engine Inspector */}
       <GeolocationInspector />
+
+      {/* Post-Processing Ingestion Handler Chain Pipeline Inspector */}
+      <PipelineInspector currentUser={DEMO_ADMIN} />
+
+      {/* Client-Side Offline-First Sync Architecture (Photos + Staff Tracking) Inspector */}
+      <OfflineSyncInspector />
+
+      {/* Write-Behind Queue & Circuit Breaker Buffering Inspector */}
+      <BufferInspector />
 
       {/* Master Configuration Lists */}
       <div className="space-y-4">

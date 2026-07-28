@@ -3,6 +3,7 @@
 
 import { getDeviceModelInfo } from './locationUtils';
 import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
+import { offlineSyncEngine } from '../system/sync/OfflineSyncEngine';
 
 export interface RouteBreadcrumb {
   lat: number;
@@ -73,7 +74,18 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       localStorage.setItem(SHARED_ROUTE_KEY, JSON.stringify(sharedRoute.slice(-1000)));
       window.dispatchEvent(new Event('fieldops_sync'));
 
-      // Sync breadcrumb to Firestore for cross-device visibility
+      // Sync breadcrumb to Firestore & enqueue in OfflineSyncEngine
+      offlineSyncEngine.enqueueBreadcrumb({
+        lat: point.lat,
+        lng: point.lng,
+        accuracy: point.accuracy,
+        speed: point.speed,
+        plusCode: point.plusCode,
+        timestamp: point.timestamp,
+        deviceInfo: point.deviceInfo,
+        userId: point.userId || 'staff_u1',
+        userName: point.userName || 'Field Staff',
+      });
       breadcrumbRepository.save(point).catch(e => console.warn('Breadcrumb cloud sync warning:', e));
     } catch (e) {}
 

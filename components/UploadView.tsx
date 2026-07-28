@@ -7,6 +7,7 @@ import { generatePlusCodeWithCitySync, generatePlusCodeWithCityAsync, getDeviceM
 import { addLocalBreadcrumb } from '../utils/routeLogger';
 import { isValidPhotoDate } from '../services/dateUtils';
 import { createPhoto } from '../factories/photoFactory';
+import { photoPipelineEngine } from '../system/pipeline/PhotoProcessingPipeline';
 
 interface Props {
   user: User;
@@ -378,51 +379,17 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
         // Complete upload
         setUploads(prev => prev.map(u => u.id === id ? { ...u, progress: 100, status: 'done' } : u));
         
-        // Actually add to app data with compressed image
+        // Run photo through Chain of Responsibility Pipeline
         setTimeout(async () => {
-          const dataUrl = await compressImageFile(file);
-          const meta = await extractPhotoMeta(file, gpsCoords);
-          
-          const cleanSiteAddress = getCleanSiteName(file.name);
-          const finalGps = meta.gps;
-          const captureDateStr = meta.captureDate;
-          const plusCodeStr = await generatePlusCodeWithCityAsync(finalGps.lat, finalGps.lng);
-
-          const capturedDevName = meta.deviceModel || getDeviceModelInfo();
-
-          const newPhoto = createPhoto({
-            id: 'lead_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
-            url: dataUrl,
-            fileName: file.name,
-            siteName: cleanSiteAddress,
-            uploadDate: new Date().toISOString(),
-            captureDate: captureDateStr,
-            uploaderId: user.id,
-            uploaderName: user.name,
-            staffMember: user.name,
-            status: 'new',
-            syncStatus: activeOnline ? 'synced' : 'pending',
-            leadSource: 'Field Visit',
-            site_lat: finalGps.lat,
-            site_lng: finalGps.lng,
-            gps: finalGps,
-            plusCode: plusCodeStr,
-            locationSource: meta.source,
-            deviceInfo: capturedDevName
-          });
-          // Record route breadcrumb for staff member automatically
-          addLocalBreadcrumb({
-            lat: finalGps.lat,
-            lng: finalGps.lng,
-            timestamp: captureDateStr || new Date().toISOString(),
-            plusCode: plusCodeStr,
-            deviceInfo: capturedDevName,
-            userId: user.id,
-            userName: user.name
-          });
-
-          onUpload(newPhoto);
-        }, 300);
+          try {
+            const result = await photoPipelineEngine.processPhoto(file, user, activeOnline, gpsCoords);
+            if (result.success && result.photo) {
+              onUpload(result.photo);
+            }
+          } catch (err) {
+            console.error('Pipeline upload execution error:', err);
+          }
+        }, 200);
 
       } else {
         setUploads(prev => prev.map(u => u.id === id ? { ...u, progress, status: 'uploading' } : u));
