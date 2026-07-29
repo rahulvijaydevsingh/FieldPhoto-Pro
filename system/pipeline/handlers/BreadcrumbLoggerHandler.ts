@@ -25,6 +25,7 @@ export class BreadcrumbLoggerHandler implements PhotoHandler {
     const lng = payload.photo.site_lng || payload.fallbackGps.lng;
 
     try {
+      const isExif = payload.photo.locationSource === 'exif';
       addLocalBreadcrumb({
         lat,
         lng,
@@ -33,6 +34,13 @@ export class BreadcrumbLoggerHandler implements PhotoHandler {
         deviceInfo: payload.photo.deviceInfo || 'Field Device',
         userId: payload.user.id,
         userName: payload.user.name,
+        sourceEvent: 'PHOTO_UPLOAD',
+        locationProvider: isExif ? 'EXIF_FALLBACK' : 'GPS_HARDWARE',
+        photoId: payload.photo.id,
+        photoUploadSource: payload.isDirectCapture ? 'DIRECT_CAPTURE' : 'GALLERY',
+        exifDateTimeOriginal: payload.exifData?.dateTimeOriginal,
+        exifCameraMake: payload.exifData?.make,
+        exifCameraModel: payload.exifData?.model,
       });
 
       payload.logs.push({

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, OdometerReading } from '../types';
-import { saveOdometerReading } from '../repositories/odometerRepository';
+import { saveOdometerReading, getUserSavedVehicleNumber, saveUserSavedVehicleNumber } from '../repositories/odometerRepository';
 import { watermarkAndCompressImage } from '../utils/imageWatermark';
 import { Gauge, Camera, MapPin, CheckCircle2, AlertTriangle, X, Car, RefreshCw } from 'lucide-react';
 
@@ -19,9 +19,15 @@ export default function OdometerEntryModal({
   onSuccess,
   defaultType = 'start_day'
 }: OdometerEntryModalProps) {
-  const [vehicleNumber, setVehicleNumber] = useState('PB-10-AB-1234');
+  const [vehicleNumber, setVehicleNumber] = useState<string>(() => getUserSavedVehicleNumber(currentUser.id));
   const [readingType, setReadingType] = useState<'start_day' | 'end_day' | 'inter_site'>(defaultType);
   const [readingKm, setReadingKm] = useState<string>('');
+
+  useEffect(() => {
+    if (isOpen && currentUser?.id) {
+      setVehicleNumber(getUserSavedVehicleNumber(currentUser.id));
+    }
+  }, [isOpen, currentUser?.id]);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -99,10 +105,13 @@ export default function OdometerEntryModal({
 
   const completeSave = (lat: number, lng: number) => {
     try {
+      const cleanVehicleNum = vehicleNumber.trim().toUpperCase();
+      saveUserSavedVehicleNumber(currentUser.id, cleanVehicleNum);
+
       const record = saveOdometerReading({
         userId: currentUser.id,
         userName: currentUser.name,
-        vehicleNumber: vehicleNumber.trim().toUpperCase(),
+        vehicleNumber: cleanVehicleNum,
         readingType,
         readingKm: parseFloat(readingKm),
         photoUrl: capturedPhoto || undefined,

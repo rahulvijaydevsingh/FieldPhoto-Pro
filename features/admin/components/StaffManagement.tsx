@@ -615,7 +615,7 @@ export default function StaffManagement({
                               </div>
                               <div className="flex items-center gap-2 text-[10px] text-gray-400">
                                 <span>{crumb.plusCode ? crumb.plusCode.split(' ')[0] : ''}</span>
-                                <span>{new Date(crumb.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                                <span>{new Date(crumb.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(crumb.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                               </div>
                             </div>
                           ))}

@@ -5,6 +5,7 @@ import { doc, setDoc, getDoc, onSnapshot, collection, query, where, getDocs, ord
 import { db, saveAppSettingsToFirestore } from './firebase';
 import { AttendanceDay, AttendanceSlot, AttendanceSettings, StaffAttendanceConfig } from '../types';
 import { getCityNameAsync, generatePlusCodeWithCityAsync, getDeviceModelInfo } from '../utils/locationUtils';
+import { addLocalBreadcrumb } from '../utils/routeLogger';
 
 const STORAGE_KEY_PREFIX = 'fieldops_attendance_schedule_';
 const ATTENDANCE_COLLECTION = 'attendance';
@@ -353,6 +354,26 @@ export async function markAttendanceSlot(
   }
 
   setLocalScheduleCache(userId, today, cached);
+
+  // Log breadcrumb ping for forensic location audit trail
+  try {
+    const isMocked = Boolean((position as any)?.coords?.isMocked);
+    addLocalBreadcrumb({
+      lat,
+      lng,
+      accuracy,
+      plusCode,
+      deviceInfo,
+      userId,
+      userName,
+      sourceEvent: 'ATTENDANCE_CHECK',
+      locationProvider: 'GPS_HARDWARE',
+      isMocked,
+      attendanceId: `${userId}_${today}_slot_${slotNumber}`,
+    });
+  } catch (err) {
+    console.warn('Breadcrumb log for attendance check failed silently:', err);
+  }
 
   // Update Firestore
   const docId = `${userId}_${today}`;

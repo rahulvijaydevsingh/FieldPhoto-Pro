@@ -126,6 +126,29 @@ export function updateOdometerStatus(
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 }
 
+export function getUserSavedVehicleNumber(userId: string): string {
+  try {
+    const saved = localStorage.getItem(`fieldops_saved_vehicle_${userId}`);
+    if (saved) return saved;
+
+    const readings = getLocalOdometerReadings();
+    const userReading = readings.find(r => r.userId === userId && r.vehicleNumber);
+    if (userReading) return userReading.vehicleNumber;
+
+    return 'PB-10-AB-1234';
+  } catch {
+    return 'PB-10-AB-1234';
+  }
+}
+
+export function saveUserSavedVehicleNumber(userId: string, vehicleNumber: string): void {
+  try {
+    if (vehicleNumber && vehicleNumber.trim()) {
+      localStorage.setItem(`fieldops_saved_vehicle_${userId}`, vehicleNumber.trim().toUpperCase());
+    }
+  } catch {}
+}
+
 export function deleteOdometerReading(id: string): void {
   const existing = getLocalOdometerReadings();
   const updated = existing.filter(r => r.id !== id);

@@ -38,12 +38,33 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
   const pendingReviews = myPhotos.filter(p => p.status === 'new').length;
   
   const overdueFollowUps = myFollowUps.filter(f => f.status === 'overdue' || (f.status === 'pending' && new Date(f.date) < new Date(new Date().setHours(0,0,0,0)))).length;
+  const today = new Date();
   const uploadedToday = myPhotos.filter(p => {
     const d = getSafePhotoDate(p.captureDate, p.uploadDate);
-    const today = new Date();
     return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
   }).length;
-  const uploadedThisWeek = 45; // Mock data
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const uploadedYesterday = myPhotos.filter(p => {
+    const d = getSafePhotoDate(p.captureDate, p.uploadDate);
+    return d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
+  }).length;
+
+  const diffYesterday = uploadedToday - uploadedYesterday;
+  const yesterdaySubtext = diffYesterday > 0 
+    ? `+${diffYesterday} from yesterday`
+    : diffYesterday < 0 
+      ? `${diffYesterday} from yesterday`
+      : `Same as yesterday`;
+
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  const uploadedThisWeek = myPhotos.filter(p => {
+    const d = getSafePhotoDate(p.captureDate, p.uploadDate);
+    return d >= startOfWeek;
+  }).length;
 
   // Only show top 3 valid follow-ups for existing photos on dashboard
   const visibleFollowUps = myFollowUps
@@ -182,7 +203,7 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
            <StatWidget 
               title="TODAY" 
               value={uploadedToday} 
-              subtext="+2 from yesterday"
+              subtext={yesterdaySubtext}
               subtextColor="text-field-gold"
               icon={<Cloud size={20} className="text-field-gold" />}
               onClick={() => onChangeView('gallery', { dateFilter: 'today' })}

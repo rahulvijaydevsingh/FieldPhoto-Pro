@@ -82,6 +82,8 @@ export function useGpsSideEffects() {
         deviceInfo: liveLocation.deviceInfo,
         userId: currentUser.id,
         userName: currentUser.name,
+        sourceEvent: 'HEARTBEAT',
+        locationProvider: 'GPS_HARDWARE',
       });
     }
   }, [liveLocation, currentUser?.id]);

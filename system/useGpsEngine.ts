@@ -40,8 +40,10 @@ export function useGpsEngine({ userId, userName, enabled = true }: UseGpsEngineO
     setGpsPermissionState('granted');
     setLastLocation(locationRecord);
 
-    // Local breadcrumb (device-only, no Firestore)
+    // Local breadcrumb (device & cloud-first)
     if (userId) {
+      const isMocked = Boolean((pos as any)?.coords?.isMocked);
+      const isFallback = Boolean((pos as any)?.isFallback);
       addLocalBreadcrumb({
         lat,
         lng,
@@ -51,6 +53,9 @@ export function useGpsEngine({ userId, userName, enabled = true }: UseGpsEngineO
         deviceInfo: locationRecord.deviceInfo,
         userId,
         userName: userName || 'Staff Member',
+        sourceEvent: (pos as any)?.isInitial ? 'APP_LOAD' : 'ROUTE_TRACKER',
+        locationProvider: isFallback ? 'WIFI_GOOGLE' : 'GPS_HARDWARE',
+        isMocked,
       });
     }
   }, [userId, userName]);

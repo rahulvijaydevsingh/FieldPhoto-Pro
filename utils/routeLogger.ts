@@ -5,6 +5,8 @@ import { getDeviceModelInfo } from './locationUtils';
 import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
 import { offlineSyncEngine } from '../system/sync/OfflineSyncEngine';
 import { haversineMeters } from './distance';
+import { getDeviceId, getFullDeviceInfo } from './deviceFingerprint';
+import { saveRouteBreadcrumbToFirestore } from '../services/firebase';
 import { 
   getCachedGeofences, 
   geofenceContainsPoint, 
@@ -13,16 +15,36 @@ import {
 } from '../services/geofence';
 
 export interface RouteBreadcrumb {
+  id?: string;
   lat: number;
   lng: number;
   accuracy?: number;
   timestamp: string; // ISO string
   plusCode?: string;
   speed?: number | null;
+  altitude?: number | null;
+  heading?: number | null;
   deviceInfo?: string;
+  deviceId?: string;
+  osVersion?: string;
+  deviceModel?: string;
+  batteryLevel?: number;
+  networkType?: string;
   userId?: string;
   userName?: string;
   geofenceIds?: string[];
+  
+  // Forensic tracking attributes
+  sourceEvent?: 'APP_LOAD' | 'PHOTO_UPLOAD' | 'ATTENDANCE_CHECK' | 'HEARTBEAT' | 'MANUAL' | 'ROUTE_TRACKER';
+  photoUploadSource?: 'DIRECT_CAPTURE' | 'GALLERY';
+  locationProvider?: 'GPS_HARDWARE' | 'WIFI_GOOGLE' | 'CELL_TOWER' | 'EXIF_FALLBACK';
+  isMocked?: boolean;
+  exifDateTimeOriginal?: string;
+  exifCameraMake?: string;
+  exifCameraModel?: string;
+  photoId?: string;
+  attendanceId?: string;
+  flags?: string[];
 }
 
 const ROUTE_PREFIX = 'fieldops_route_log_';
@@ -58,8 +80,18 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       }
     }
 
+    // Default metadata enrichment if missing
     if (!point.deviceInfo) {
       point.deviceInfo = getDeviceModelInfo();
+    }
+    if (!point.deviceId) {
+      point.deviceId = getDeviceId();
+    }
+    if (!point.sourceEvent) {
+      point.sourceEvent = 'MANUAL';
+    }
+    if (!point.locationProvider) {
+      point.locationProvider = 'GPS_HARDWARE';
     }
 
     // Geofence Evaluation
@@ -103,7 +135,10 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       localStorage.setItem(SHARED_ROUTE_KEY, JSON.stringify(sharedRoute.slice(-1000)));
       window.dispatchEvent(new Event('fieldops_sync'));
 
-      // Sync breadcrumb to Firestore & enqueue in OfflineSyncEngine
+      // Cloud-first direct write to Firestore (with offline queue backup)
+      saveRouteBreadcrumbToFirestore(point).catch(e => console.warn('Direct Firestore breadcrumb warning:', e));
+
+      // Enqueue in OfflineSyncEngine for offline durability
       offlineSyncEngine.enqueueBreadcrumb({
         lat: point.lat,
         lng: point.lng,
@@ -115,7 +150,6 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
         userId: point.userId || 'staff_u1',
         userName: point.userName || 'Field Staff',
       });
-      breadcrumbRepository.save(point).catch(e => console.warn('Breadcrumb cloud sync warning:', e));
     } catch (e) {}
 
     return trimmed;

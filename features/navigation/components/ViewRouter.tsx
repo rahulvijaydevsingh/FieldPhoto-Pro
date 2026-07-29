@@ -236,6 +236,19 @@ export default function ViewRouter() {
             );
 
           case 'route_tracker':
+            if (currentUser.role !== 'admin') {
+              return (
+                <div className="p-4 md:p-0">
+                  <DashboardView 
+                    currentUser={currentUser}
+                    photos={photos}
+                    followUps={followUps}
+                    teamMembers={teamMembers}
+                    onNavigate={navigateTo}
+                  />
+                </div>
+              );
+            }
             return (
               <div className="p-4 md:p-0">
                 <RouteTrackerView currentUser={currentUser} teamMembers={teamMembers} />
