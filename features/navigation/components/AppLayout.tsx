@@ -11,7 +11,12 @@ import {
   Wifi, 
   WifiOff, 
   RefreshCw, 
-  User as UserIcon 
+  User as UserIcon,
+  Navigation,
+  BarChart3,
+  ShieldAlert,
+  Gauge,
+  Shield
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/useAppStore';
 import { View } from '../../../types';
@@ -132,8 +137,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <NavItem view="gallery" icon={ImageIcon} label="Photo Gallery" />
             <NavItem view="followups" icon={CalendarCheck} label="Follow-ups" />
             <NavItem view="pending" icon={AlertCircleIcon} label="Pending Review" badge={pendingCount > 0 ? pendingCount : undefined} />
+            <NavItem view="odometer" icon={Gauge} label="Odometer & Mileage" />
             {currentUser.role === 'admin' && (
-              <NavItem view="admin" icon={Users} label="Admin Panel" />
+              <NavItem view="admin" icon={Shield} label="Admin Panel" />
             )}
           </nav>
         </div>

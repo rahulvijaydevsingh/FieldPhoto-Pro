@@ -11,7 +11,12 @@ import GeolocationInspector from './GeolocationInspector';
 import PipelineInspector from './PipelineInspector';
 import BufferInspector from './BufferInspector';
 import OfflineSyncInspector from './OfflineSyncInspector';
-import { Database, Users, Tag, Hammer, FileText, BookOpen, MapPin, Activity, Settings, Trash2, LayoutGrid, Radio } from 'lucide-react';
+import GeofencesManager from './GeofencesManager';
+import AttendanceView from '../../../components/AttendanceView';
+import AnalyticsDashboardView from '../../analytics/components/AnalyticsDashboardView';
+import LeadEscalationView from '../../escalations/components/LeadEscalationView';
+import RouteTrackerView from '../../tracking/components/RouteTrackerView';
+import { Database, Users, Tag, Hammer, FileText, BookOpen, MapPin, Activity, Settings, Trash2, LayoutGrid, Radio, Shield, Clock, BarChart3, ShieldAlert, Navigation, Gauge } from 'lucide-react';
 
 interface AdminPanelViewProps {
   photos: Photo[];
@@ -31,7 +36,7 @@ interface AdminPanelViewProps {
   onUpdateTeamMembers?: (members: User[]) => void;
 }
 
-type AdminTab = 'visits' | 'staff' | 'diagnostics' | 'config';
+type AdminTab = 'visits' | 'staff' | 'analytics' | 'escalations' | 'geofences' | 'attendance' | 'diagnostics' | 'config';
 
 export default function AdminPanelView({ 
   photos, 
@@ -165,6 +170,50 @@ export default function AdminPanelView({
         </button>
 
         <button
+          onClick={() => setActiveTab('analytics')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'analytics'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <BarChart3 size={15} /> Operations Analytics
+        </button>
+
+        <button
+          onClick={() => setActiveTab('escalations')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'escalations'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <ShieldAlert size={15} /> SLA Escalations
+        </button>
+
+        <button
+          onClick={() => setActiveTab('geofences')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'geofences'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <Shield size={15} /> Geofences & Boundaries
+        </button>
+
+        <button
+          onClick={() => setActiveTab('attendance')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+            activeTab === 'attendance'
+              ? 'bg-[#D99026] text-black border-[#D99026] shadow-lg'
+              : 'bg-[#2D2424] text-gray-300 border-[#3A2E2E] hover:border-gray-500'
+          }`}
+        >
+          <Clock size={15} /> Attendance Audit Logs
+        </button>
+
+        <button
           onClick={() => setActiveTab('diagnostics')}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
             activeTab === 'diagnostics'
@@ -251,6 +300,9 @@ export default function AdminPanelView({
       {/* TAB 2: Staff Management & Live GPS Tracking */}
       {activeTab === 'staff' && (
         <div className="space-y-6">
+          {/* Live GPS Route Breadcrumb Tracking UI */}
+          <RouteTrackerView currentUser={DEMO_ADMIN} teamMembers={teamMembers} />
+
           <StaffManagement 
             members={teamMembers}
             onUpdateMembers={saveTeamMembers}
@@ -261,6 +313,30 @@ export default function AdminPanelView({
           {/* Geolocation Strategy Engine Inspector */}
           <GeolocationInspector />
         </div>
+      )}
+
+      {/* TAB ANALYTICS: Operations & Conversion Intelligence */}
+      {activeTab === 'analytics' && (
+        <AnalyticsDashboardView photos={photos} followUps={followUps} teamMembers={teamMembers} />
+      )}
+
+      {/* TAB ESCALATIONS: Overdue SLA Follow-ups */}
+      {activeTab === 'escalations' && (
+        <LeadEscalationView 
+          photos={photos} 
+          followUps={followUps} 
+          teamMembers={teamMembers}
+        />
+      )}
+
+      {/* TAB GEOFENCES: Boundary Control & Event Stream */}
+      {activeTab === 'geofences' && (
+        <GeofencesManager currentUser={DEMO_ADMIN} teamMembers={teamMembers} />
+      )}
+
+      {/* TAB ATTENDANCE: Audit Logs */}
+      {activeTab === 'attendance' && (
+        <AttendanceView currentUser={DEMO_ADMIN} teamMembers={teamMembers} />
       )}
 
       {/* TAB 3: System Diagnostics & Offline Sync */}

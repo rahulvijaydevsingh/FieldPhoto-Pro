@@ -60,6 +60,44 @@
         "constructionStages": { "type": "array" }
       },
       "required": ["id"]
+    },
+    "geofences": {
+      "title": "Geofences",
+      "description": "Virtual boundary perimeters for sites",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "wkt": { "type": "string" },
+        "type": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "wkt", "type"]
+    },
+    "geofence_events": {
+      "title": "Geofence Events",
+      "description": "Staff arrival and exit transition events",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "geofenceId": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "geofenceId", "userId", "type", "timestamp"]
+    },
+    "attendance": {
+      "title": "Random Attendance Logs",
+      "description": "Randomized 3x daily GPS attendance verification logs",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "date": { "type": "string" },
+        "slots": { "type": "array" }
+      },
+      "required": ["userId", "date", "slots"]
     }
   }
 }

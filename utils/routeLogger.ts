@@ -4,6 +4,13 @@
 import { getDeviceModelInfo } from './locationUtils';
 import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
 import { offlineSyncEngine } from '../system/sync/OfflineSyncEngine';
+import { haversineMeters } from './distance';
+import { 
+  getCachedGeofences, 
+  geofenceContainsPoint, 
+  detectGeofenceTransitions, 
+  writeGeofenceEventToFirestore 
+} from '../services/geofence';
 
 export interface RouteBreadcrumb {
   lat: number;
@@ -15,21 +22,15 @@ export interface RouteBreadcrumb {
   deviceInfo?: string;
   userId?: string;
   userName?: string;
+  geofenceIds?: string[];
 }
 
 const ROUTE_PREFIX = 'fieldops_route_log_';
 const SHARED_ROUTE_KEY = 'fieldops_shared_breadcrumbs';
 
-// Calculate distance in meters between two lat/lng coordinates (Haversine formula)
+// Calculate distance in meters between two lat/lng coordinates (Haversine formula via WGS-84)
 export function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371e3; // Earth radius in meters
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  return haversineMeters(lat1, lon1, lat2, lon2);
 }
 
 function getTodayKey(): string {
@@ -59,6 +60,34 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
 
     if (!point.deviceInfo) {
       point.deviceInfo = getDeviceModelInfo();
+    }
+
+    // Geofence Evaluation
+    try {
+      const activeFences = getCachedGeofences().filter(g => g.active);
+      const currentMatching = activeFences.filter(g => geofenceContainsPoint(g, point.lat, point.lng));
+      point.geofenceIds = currentMatching.map(g => g.id);
+
+      const lastPoint = route.length > 0 ? route[route.length - 1] : null;
+      const prevIds = lastPoint?.geofenceIds || [];
+      const transitions = detectGeofenceTransitions(prevIds, point.geofenceIds);
+
+      transitions.forEach(t => {
+        const fenceObj = activeFences.find(g => g.id === t.geofenceId);
+        writeGeofenceEventToFirestore({
+          geofenceId: t.geofenceId,
+          geofenceName: fenceObj?.name || 'Site Fence',
+          userId: point.userId || 'staff_u1',
+          userName: point.userName || 'Field Staff',
+          type: t.type,
+          lat: point.lat,
+          lng: point.lng,
+          plusCode: point.plusCode,
+          timestamp: point.timestamp
+        }).catch(e => console.warn('Failed to log geofence event:', e));
+      });
+    } catch (gfErr) {
+      console.warn('Geofence check warning:', gfErr);
     }
 
     route.push(point);

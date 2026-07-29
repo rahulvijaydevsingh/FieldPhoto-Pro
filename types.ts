@@ -3,7 +3,32 @@ export type Role = 'admin' | 'staff';
 
 export const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%232D2424' stroke='%23D99026' stroke-width='1.5'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/><circle cx='12' cy='7' r='4'/></svg>";
 
-export type View = 'dashboard' | 'upload' | 'gallery' | 'pending' | 'admin' | 'profile' | 'followups';
+export type View = 'dashboard' | 'upload' | 'gallery' | 'pending' | 'admin' | 'profile' | 'followups' | 'odometer' | 'route_tracker' | 'analytics' | 'escalations';
+
+export interface LeadEscalationItem {
+  id: string;
+  photoId: string;
+  clientName: string;
+  siteName: string;
+  assignedStaffId: string;
+  assignedStaffName: string;
+  followUpDueDate: string;
+  hoursOverdue: number;
+  urgencyLevel: 'warning' | 'critical' | 'severe';
+  status: 'pending_action' | 'reassigned' | 'resolved';
+  reassignedToId?: string;
+  reassignedToName?: string;
+  escalatedAt: string;
+}
+
+export interface KPIStats {
+  totalVisits: number;
+  verifiedGpsVisits: number;
+  conversionRate: number;
+  overdueFollowUps: number;
+  activeFieldStaffCount: number;
+  totalGeofenceCrossings: number;
+}
 
 export type Priority = 'High' | 'Medium' | 'Low';
 
@@ -15,6 +40,101 @@ export type SyncStatus = 'synced' | 'pending' | 'error';
 export type FollowUpType = 'Phone Call' | 'Site Visit' | 'WhatsApp' | 'Email' | 'Meeting' | 'Quotation' | 'Nurture' | 'None';
 
 export type FollowUpStatus = 'pending' | 'completed' | 'overdue';
+
+export type GeofenceShapeType = 'circle' | 'polygon' | 'polyline';
+
+export interface Geofence {
+  id: string;
+  name: string;
+  description?: string;
+  wkt: string; // e.g. CIRCLE (30.901 75.857, 100) or POLYGON ((...))
+  type: GeofenceShapeType;
+  color?: string;
+  calendarId?: string;
+  assignedUserIds?: string[];
+  floor?: number;
+  ceiling?: number;
+  polylineDistance?: number;
+  createdBy: string;
+  createdAt: string;
+  active: boolean;
+}
+
+export interface GeofenceEvent {
+  id: string;
+  geofenceId: string;
+  geofenceName?: string;
+  userId: string;
+  userName: string;
+  type: 'enter' | 'exit';
+  lat: number;
+  lng: number;
+  plusCode?: string;
+  timestamp: string;
+  breadcrumbId?: string;
+}
+
+export type AttendanceMode = 'random' | 'fixed';
+export type VerificationMethod = 'gps' | 'photo' | 'both';
+
+export interface AttendanceSettings {
+  enabled: boolean;
+  mode: AttendanceMode;
+  shiftStart: string; // e.g. "10:00"
+  shiftEnd: string; // e.g. "19:00"
+  checksPerDay: number; // e.g. 3
+  fixedCheckTimes: string[]; // e.g. ["10:30", "14:30", "18:00"]
+  verificationMethod: VerificationMethod;
+  soundAlertEnabled: boolean;
+}
+
+export interface StaffAttendanceConfig {
+  userId: string;
+  userName?: string;
+  useGlobalDefaults: boolean;
+  customSettings?: Partial<AttendanceSettings>;
+}
+
+export interface AttendanceSlot {
+  slot: 1 | 2 | 3 | number;
+  scheduledAt: number; // unix ms
+  markedAt?: number; // unix ms
+  status: 'pending' | 'marked' | 'missed';
+  lat?: number;
+  lng?: number;
+  plusCode?: string;
+  accuracy?: number;
+  deviceInfo?: string;
+  city?: string;
+  rejectReason?: string;
+  photoUrl?: string;
+}
+
+export interface OdometerReading {
+  id: string;
+  userId: string;
+  userName: string;
+  vehicleNumber: string;
+  readingType: 'start_day' | 'end_day' | 'inter_site';
+  readingKm: number;
+  photoUrl?: string;
+  timestamp: string;
+  lat?: number;
+  lng?: number;
+  notes?: string;
+  verificationStatus?: 'pending' | 'verified' | 'flagged';
+  ocrReadingKm?: number;
+  verifiedBy?: string;
+  verifiedAt?: string;
+}
+
+export interface AttendanceDay {
+  userId: string;
+  userName: string;
+  date: string; // 'YYYY-MM-DD'
+  slots: AttendanceSlot[];
+  generatedAt: number;
+}
 
 export interface StaffLocation {
   lat: number;
@@ -82,6 +202,7 @@ export interface Photo {
   captureDate: string; // ISO
   uploaderId: string;
   uploaderName: string;
+  staffMember?: string;
   status: PhotoStatus;
   syncStatus?: SyncStatus;
   

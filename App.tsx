@@ -9,6 +9,8 @@ import { useVersionCheck } from './system/useVersionCheck';
 import { useNightlyLogout } from './system/useNightlyLogout';
 import { useThemeManager } from './system/useThemeManager';
 import { useGpsSideEffects } from './system/useGpsSideEffects';
+import { useRandomAttendanceCheck } from './system/useRandomAttendanceCheck';
+import AttendanceModal from './components/AttendanceModal';
 
 export default function App() {
   const currentUser = useAppStore(s => s.currentUser);
@@ -23,6 +25,7 @@ export default function App() {
   useNightlyLogout();
   useThemeManager();
   useGpsSideEffects();
+  const { activeSlot, dismissModal } = useRandomAttendanceCheck(currentUser);
 
   // 2. Firestore Sync Bootstrap
   useEffect(() => {
@@ -76,6 +79,14 @@ export default function App() {
   return (
     <AppLayout>
       <ViewRouter />
+      {activeSlot && currentUser && (
+        <AttendanceModal
+          currentUser={currentUser}
+          slotNumber={activeSlot.slotNumber}
+          scheduledTime={activeSlot.scheduledTime}
+          onComplete={dismissModal}
+        />
+      )}
     </AppLayout>
   );
 }

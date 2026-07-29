@@ -44,14 +44,7 @@ const legacyStorage: StateStorage = {
       try {
         const parsed = JSON.parse(rawPhotos);
         if (Array.isArray(parsed)) {
-          photos = parsed.filter((p: Photo) =>
-            p && p.id &&
-            !['p3','p4','p5','p6','p7','p8','p9','p10','p11','p12'].includes(p.id) &&
-            !p.siteName?.includes('Green Valley Apartments') &&
-            !p.siteName?.includes('Model Town Villa') &&
-            !p.siteName?.includes('Sarabha Nagar Showroom') &&
-            !p.siteName?.includes('Unknown Site #3')
-          );
+          photos = parsed.filter((p: Photo) => p && p.id);
         }
       } catch {}
     }
@@ -298,6 +291,8 @@ export const useAppStore = create<AppStore>()(
           state.photos.forEach((localP) => {
             if (localP && localP.id && !map.has(localP.id) && !recyclePhotoIds.has(localP.id)) {
               map.set(localP.id, localP);
+              // Auto-heal: ensure local photo is persisted to Firestore
+              photoRepository.save(localP);
             }
           });
           const merged = Array.from(map.values());

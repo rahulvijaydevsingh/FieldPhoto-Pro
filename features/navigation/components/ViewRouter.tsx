@@ -6,6 +6,10 @@ import GalleryView from '../../../components/GalleryView';
 import FollowUpsView from '../../../components/FollowUpsView';
 import AdminPanelView from '../../../components/AdminPanelView';
 import ProfileView from '../../../components/ProfileView';
+import RouteTrackerView from '../../tracking/components/RouteTrackerView';
+import AnalyticsDashboardView from '../../analytics/components/AnalyticsDashboardView';
+import LeadEscalationView from '../../escalations/components/LeadEscalationView';
+import OdometerTrackerView from '../../../components/OdometerTrackerView';
 import ErrorBoundary from '../../../components/ErrorBoundary';
 import { useAppStore } from '../../../stores/useAppStore';
 import { exportPhotosToExcel } from '../../../utils/exportUtils';
@@ -46,6 +50,20 @@ export default function ViewRouter() {
 
   const handleLogout = useAppStore(s => s.handleLogout);
   const handleUpdateUser = useAppStore(s => s.handleUpdateUser);
+
+  const teamMembers = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem('fieldops_team_members');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [
+      { id: 'u1', name: 'Rajesh Kumar', email: 'admin@company.com', role: 'admin', phone: '+91 98765 43210', active: true },
+      { id: 'u2', name: 'Amanpreet Singh', email: 'meera@maharajacrm.com', role: 'staff', phone: '+91 98765 43211', active: true }
+    ];
+  }, [currentUser]);
 
   const handleAddPhoto = (newPhoto: Photo) => {
     storeAddPhoto(newPhoto);
@@ -200,6 +218,13 @@ export default function ViewRouter() {
               </div>
             ) : null;
 
+          case 'odometer':
+            return (
+              <div className="p-4 md:p-0">
+                <OdometerTrackerView currentUser={currentUser} teamMembers={teamMembers} />
+              </div>
+            );
+
           case 'profile':
             return (
               <ProfileView 
@@ -208,6 +233,37 @@ export default function ViewRouter() {
                 onLogout={handleLogout}
                 onBack={() => navigateTo('dashboard')}
               />
+            );
+
+          case 'route_tracker':
+            return (
+              <div className="p-4 md:p-0">
+                <RouteTrackerView currentUser={currentUser} teamMembers={teamMembers} />
+              </div>
+            );
+
+          case 'analytics':
+            return (
+              <div className="p-4 md:p-0">
+                <AnalyticsDashboardView photos={photos} followUps={followUps} teamMembers={teamMembers} />
+              </div>
+            );
+
+          case 'escalations':
+            return (
+              <div className="p-4 md:p-0">
+                <LeadEscalationView 
+                  photos={photos} 
+                  followUps={followUps} 
+                  teamMembers={teamMembers}
+                  onReassignFollowUp={(fuId, newUserId) => {
+                    const match = followUps.find(f => f.id === fuId);
+                    const photo = match ? photos.find(p => p.id === match.photoId) : null;
+                    if (photo) updatePhoto({ ...photo, assignedTo: newUserId });
+                  }}
+                  onCompleteFollowUp={toggleFollowUp}
+                />
+              </div>
             );
 
           default:
