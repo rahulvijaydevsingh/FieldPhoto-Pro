@@ -1,18 +1,20 @@
 import { RouteBreadcrumb } from '../types';
-import { subscribeRouteBreadcrumbs } from '../services/firebase';
-import { addLocalBreadcrumb } from '../utils/routeLogger';
+import { subscribeRouteBreadcrumbs, saveRouteBreadcrumbToFirestore } from '../services/firebase';
 
 export const breadcrumbRepository = {
   async save(crumbData: Partial<RouteBreadcrumb>): Promise<void> {
-    addLocalBreadcrumb({
-      lat: crumbData.lat || 30.9010,
-      lng: crumbData.lng || 75.8573,
+    if (crumbData.lat === undefined || crumbData.lng === undefined) return;
+    await saveRouteBreadcrumbToFirestore({
+      lat: crumbData.lat,
+      lng: crumbData.lng,
       accuracy: crumbData.accuracy || 8,
       timestamp: crumbData.timestamp || new Date().toISOString(),
       plusCode: crumbData.plusCode || 'Verified GPS',
       deviceInfo: crumbData.deviceInfo || 'Android Device',
       userId: crumbData.userId || 'u1',
-      userName: crumbData.userName || 'Field Staff'
+      userName: crumbData.userName || 'Field Staff',
+      sourceEvent: crumbData.sourceEvent || 'ROUTE_TRACKER',
+      locationProvider: crumbData.locationProvider || 'GPS_HARDWARE',
     });
   }
 };

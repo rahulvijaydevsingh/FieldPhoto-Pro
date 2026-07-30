@@ -2,12 +2,13 @@ import { useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { useGpsEngine } from './useGpsEngine';
 import { teamRepository } from '../repositories/teamRepository';
-import { addLocalBreadcrumb } from '../utils/routeLogger';
+import { calculateDistanceMeters } from '../utils/locationUtils';
 
 export function useGpsSideEffects() {
   const currentUser = useAppStore(s => s.currentUser);
   const setCurrentUser = useAppStore(s => s.setCurrentUser);
   const lastHeartbeatRef = useRef<number>(0);
+  const lastSavedLocRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const { lastLocation: liveLocation } = useGpsEngine({
     userId: currentUser?.id,
@@ -15,7 +16,7 @@ export function useGpsSideEffects() {
     enabled: !!currentUser,
   });
 
-  // Heartbeat & Online Presence Loop
+  // Heartbeat & Online Presence Loop (Synced every 2 minutes)
   useEffect(() => {
     if (!currentUser) return;
 
@@ -33,8 +34,8 @@ export function useGpsSideEffects() {
     // Immediate initial heartbeat on session load/online
     sendHeartbeat();
 
-    // Periodic heartbeat every 15 seconds
-    const interval = setInterval(sendHeartbeat, 15000);
+    // Periodic presence heartbeat every 2 minutes (120,000ms)
+    const interval = setInterval(sendHeartbeat, 120000);
 
     // Clean exit on unload
     const handleUnload = () => {
@@ -55,7 +56,7 @@ export function useGpsSideEffects() {
     };
   }, [currentUser?.id]);
 
-  // Live Location sync & Breadcrumb Logging
+  // Sync state & update team member location when location genuinely moves (> 15m)
   useEffect(() => {
     if (!currentUser || !liveLocation) return;
 
@@ -68,23 +69,24 @@ export function useGpsSideEffects() {
     };
     setCurrentUser(updatedUser);
 
-    // Save location & presence to repository
-    teamRepository.save(updatedUser);
+    // Only update teamRepository if location moved > 15m or no location was recorded yet
+    let movedSignificantly = true;
+    if (lastSavedLocRef.current && liveLocation.lat !== undefined && liveLocation.lng !== undefined) {
+      const dist = calculateDistanceMeters(
+        lastSavedLocRef.current.lat,
+        lastSavedLocRef.current.lng,
+        liveLocation.lat,
+        liveLocation.lng
+      );
+      if (dist < 15) {
+        movedSignificantly = false;
+      }
+    }
 
-    // Ensure location breadcrumb is logged whenever staff moves/uses app
-    if (liveLocation.lat !== undefined && liveLocation.lng !== undefined) {
-      addLocalBreadcrumb({
-        lat: liveLocation.lat,
-        lng: liveLocation.lng,
-        accuracy: liveLocation.accuracy,
-        timestamp: liveLocation.timestamp || nowIso,
-        plusCode: liveLocation.plusCode,
-        deviceInfo: liveLocation.deviceInfo,
-        userId: currentUser.id,
-        userName: currentUser.name,
-        sourceEvent: 'HEARTBEAT',
-        locationProvider: 'GPS_HARDWARE',
-      });
+    if (movedSignificantly && liveLocation.lat !== undefined && liveLocation.lng !== undefined) {
+      lastSavedLocRef.current = { lat: liveLocation.lat, lng: liveLocation.lng };
+      teamRepository.save(updatedUser);
     }
   }, [liveLocation, currentUser?.id]);
 }
+

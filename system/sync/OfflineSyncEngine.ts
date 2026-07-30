@@ -23,6 +23,7 @@
 
 import { PendingPhotoItem, PendingBreadcrumbItem, OfflineSyncEngineStats } from './types';
 import { breadcrumbRepository } from '../../repositories/breadcrumbRepository';
+import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded } from '../../services/firebase';
 
 export class OfflineSyncEngine {
   private isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -37,7 +38,7 @@ export class OfflineSyncEngine {
   constructor() {
     this.initStorage();
     this.bindNetworkListeners();
-    this.startAutoSyncWorker(10000);
+    this.startAutoSyncWorker(300000); // Batch flush every 5 minutes
   }
 
   private initStorage(): void {
@@ -114,10 +115,6 @@ export class OfflineSyncEngine {
     this.pendingBreadcrumbs.push(breadcrumbItem);
     this.saveStorage();
 
-    if (this.isOnline) {
-      this.triggerBatchSync();
-    }
-
     return breadcrumbItem;
   }
 
@@ -125,7 +122,7 @@ export class OfflineSyncEngine {
    * Triggers background sync worker to batch-upload pending photos and location telemetry
    */
   public async triggerBatchSync(): Promise<{ photosFlushed: number; breadcrumbsFlushed: number }> {
-    if (!this.isOnline) {
+    if (!this.isOnline || isFirestoreQuotaExceeded()) {
       return { photosFlushed: 0, breadcrumbsFlushed: 0 };
     }
 
@@ -141,10 +138,11 @@ export class OfflineSyncEngine {
       this.saveStorage();
 
       try {
-        // Bulk sync breadcrumbs
+        // Bulk sync breadcrumbs directly to Firestore
         for (const bc of itemsToSync) {
+          if (isFirestoreQuotaExceeded()) break;
           try {
-            await breadcrumbRepository.save({
+            await saveRouteBreadcrumbToFirestore({
               lat: bc.lat,
               lng: bc.lng,
               timestamp: bc.timestamp,
@@ -156,15 +154,17 @@ export class OfflineSyncEngine {
             });
             breadcrumbsFlushed++;
             this.totalBreadcrumbsSynced++;
+            bc.syncStatus = 'SYNCED';
           } catch (e) {
             bc.syncStatus = 'FAILED';
             bc.retryCount++;
+            if (isFirestoreQuotaExceeded()) break;
           }
         }
 
-        // Remove successfully flushed breadcrumbs
+        // Remove successfully flushed or max-retried breadcrumbs
         this.pendingBreadcrumbs = this.pendingBreadcrumbs.filter(
-          (b) => b.syncStatus !== 'SYNCING' && b.retryCount < 5
+          (b) => b.syncStatus !== 'SYNCED' && b.retryCount < 5
         );
       } catch (err) {
         console.warn('Breadcrumb sync batch error:', err);
@@ -200,7 +200,7 @@ export class OfflineSyncEngine {
     return { photosFlushed, breadcrumbsFlushed };
   }
 
-  public startAutoSyncWorker(intervalMs: number = 10000): void {
+  public startAutoSyncWorker(intervalMs: number = 300000): void {
     if (this.syncTimer) clearInterval(this.syncTimer);
     this.syncTimer = setInterval(() => {
       if (this.isOnline && (this.pendingPhotos.length > 0 || this.pendingBreadcrumbs.length > 0)) {
@@ -232,7 +232,7 @@ export class OfflineSyncEngine {
       totalPhotosSynced: this.totalPhotosSynced,
       totalBreadcrumbsSynced: this.totalBreadcrumbsSynced,
       lastSyncTime: this.lastSyncTime,
-      autoSyncIntervalMs: 10000,
+      autoSyncIntervalMs: 300000,
     };
   }
 

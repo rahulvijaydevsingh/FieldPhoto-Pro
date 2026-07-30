@@ -106,10 +106,32 @@ body {
 
 .theme-light input, 
 .theme-light select, 
+.theme-light option,
 .theme-light textarea {
   background-color: #ffffff !important;
   color: #0f172a !important;
   border-color: #cbd5e1 !important;
+  font-weight: 600 !important;
+}
+
+.theme-light input::placeholder,
+.theme-light textarea::placeholder {
+  color: #64748b !important;
+}
+
+.theme-light input[type="text"],
+.theme-light input[type="number"],
+.theme-light input[type="email"],
+.theme-light input[type="password"] {
+  color: #0f172a !important;
+}
+
+.theme-light .text-emerald-400 {
+  color: #047857 !important;
+}
+
+.theme-light .text-field-gold {
+  color: #b45309 !important;
 }
 
 /* =================================================================== */
@@ -165,11 +187,17 @@ body {
 
 .theme-high-contrast input, 
 .theme-high-contrast select, 
+.theme-high-contrast option,
 .theme-high-contrast textarea {
   background-color: #ffffff !important;
   color: #000000 !important;
   border: 2px solid #000000 !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
+}
+
+.theme-high-contrast input::placeholder,
+.theme-high-contrast textarea::placeholder {
+  color: #334155 !important;
 }
 
 .theme-high-contrast button {

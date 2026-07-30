@@ -3,6 +3,22 @@
 const CODE_ALPHABET = "23456789CFGHJMPQRVWX";
 
 /**
+ * Calculates distance in meters between two coordinates using the Haversine formula
+ */
+export function calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  if (lat1 === lat2 && lng1 === lng2) return 0;
+  const R = 6371000; // Radius of Earth in meters
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
  * Encodes latitude and longitude into a standard 10-character Open Location Code (Plus Code)
  * e.g., 30.6782, 76.7291 -> "8J6V9X24+8Q"
  */

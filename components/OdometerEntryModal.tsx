@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, OdometerReading } from '../types';
 import { saveOdometerReading, getUserSavedVehicleNumber, saveUserSavedVehicleNumber } from '../repositories/odometerRepository';
 import { watermarkAndCompressImage } from '../utils/imageWatermark';
+import { addLocalBreadcrumb } from '../utils/routeLogger';
 import { Gauge, Camera, MapPin, CheckCircle2, AlertTriangle, X, Car, RefreshCw } from 'lucide-react';
 
 interface OdometerEntryModalProps {
@@ -119,6 +120,18 @@ export default function OdometerEntryModal({
         lat,
         lng,
         verificationStatus: 'verified'
+      });
+
+      // Log GPS location audit ping into Route Breadcrumbs engine
+      addLocalBreadcrumb({
+        lat,
+        lng,
+        accuracy: 10,
+        timestamp: new Date().toISOString(),
+        userId: currentUser.id,
+        userName: currentUser.name,
+        sourceEvent: 'ODOMETER_ENTRY',
+        locationProvider: 'GPS_HARDWARE'
       });
 
       setSubmitting(false);

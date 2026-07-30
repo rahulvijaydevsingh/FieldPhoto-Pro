@@ -2,7 +2,7 @@
 // Handles WKT geometry, bounding box pre-checks, point-in-polygon/circle/line checks, and Firestore I/O
 
 import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, handleFirestoreError, isFirestoreQuotaExceeded } from './firebase';
 import { Geofence, GeofenceEvent } from '../types';
 import { haversineMeters, distanceToLineMeters, latitudeDeltaForMeters, longitudeDeltaForMeters } from '../utils/distance';
 
@@ -243,6 +243,8 @@ export function subscribeGeofences(callback: (geofences: Geofence[]) => void): (
     callback(initialCache);
   }
 
+  if (isFirestoreQuotaExceeded()) return () => {};
+
   try {
     const q = query(collection(db, GEOFENCES_COLLECTION));
     return onSnapshot(
@@ -256,12 +258,12 @@ export function subscribeGeofences(callback: (geofences: Geofence[]) => void): (
         callback(list);
       },
       (err) => {
-        console.warn('Firestore geofences listener warning:', err);
+        handleFirestoreError('subscribeGeofences', err);
         callback(getCachedGeofences());
       }
     );
   } catch (err) {
-    console.warn('Failed to subscribe to geofences:', err);
+    handleFirestoreError('Failed to subscribe to geofences', err);
     callback(getCachedGeofences());
     return () => {};
   }
@@ -276,6 +278,8 @@ export function subscribeGeofenceEvents(callback: (events: GeofenceEvent[]) => v
     callback(initialCache);
   }
 
+  if (isFirestoreQuotaExceeded()) return () => {};
+
   try {
     const q = query(collection(db, GEOFENCE_EVENTS_COLLECTION), orderBy('timestamp', 'desc'), limit(100));
     return onSnapshot(
@@ -289,12 +293,12 @@ export function subscribeGeofenceEvents(callback: (events: GeofenceEvent[]) => v
         callback(events);
       },
       (err) => {
-        console.warn('Firestore geofence events listener warning:', err);
+        handleFirestoreError('subscribeGeofenceEvents', err);
         callback(getCachedGeofenceEvents());
       }
     );
   } catch (err) {
-    console.warn('Failed to subscribe to geofence events:', err);
+    handleFirestoreError('Failed to subscribe to geofence events', err);
     callback(getCachedGeofenceEvents());
     return () => {};
   }
@@ -314,13 +318,15 @@ export async function saveGeofenceToFirestore(geofence: Geofence): Promise<void>
   }
   localStorage.setItem(LOCAL_GEOFENCES_KEY, JSON.stringify(localList));
 
+  if (isFirestoreQuotaExceeded()) return;
+
   try {
     await setDoc(doc(db, GEOFENCES_COLLECTION, geofence.id), {
       ...geofence,
       updatedAt: serverTimestamp()
     }, { merge: true });
   } catch (err) {
-    console.warn('Warning: Saved geofence locally, cloud write delayed:', err);
+    handleFirestoreError('saveGeofenceToFirestore', err);
   }
 }
 
@@ -331,10 +337,12 @@ export async function deleteGeofenceFromFirestore(geofenceId: string): Promise<v
   const localList = getCachedGeofences().filter(g => g.id !== geofenceId);
   localStorage.setItem(LOCAL_GEOFENCES_KEY, JSON.stringify(localList));
 
+  if (isFirestoreQuotaExceeded()) return;
+
   try {
     await deleteDoc(doc(db, GEOFENCES_COLLECTION, geofenceId));
   } catch (err) {
-    console.warn('Warning: Removed geofence locally, cloud delete delayed:', err);
+    handleFirestoreError('deleteGeofenceFromFirestore', err);
   }
 }
 
@@ -353,13 +361,15 @@ export async function writeGeofenceEventToFirestore(event: Omit<GeofenceEvent, '
   localEvents.unshift(fullEvent);
   localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(localEvents.slice(0, 100)));
 
+  if (isFirestoreQuotaExceeded()) return fullEvent;
+
   try {
     await setDoc(doc(db, GEOFENCE_EVENTS_COLLECTION, newId), {
       ...fullEvent,
       createdAt: serverTimestamp()
     });
   } catch (err) {
-    console.warn('Warning: Logged geofence event locally, cloud write queued:', err);
+    handleFirestoreError('writeGeofenceEventToFirestore', err);
   }
 
   return fullEvent;

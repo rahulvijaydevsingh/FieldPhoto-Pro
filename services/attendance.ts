@@ -2,7 +2,7 @@
 // Handles scheduling, prompt evaluation, GPS capture, offline queuing, and Firestore sync
 
 import { doc, setDoc, getDoc, onSnapshot, collection, query, where, getDocs, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db, saveAppSettingsToFirestore } from './firebase';
+import { db, saveAppSettingsToFirestore, handleFirestoreError, isFirestoreQuotaExceeded } from './firebase';
 import { AttendanceDay, AttendanceSlot, AttendanceSettings, StaffAttendanceConfig } from '../types';
 import { getCityNameAsync, generatePlusCodeWithCityAsync, getDeviceModelInfo } from '../utils/locationUtils';
 import { addLocalBreadcrumb } from '../utils/routeLogger';
@@ -69,6 +69,8 @@ export async function getGlobalAttendanceSettings(): Promise<AttendanceSettings>
     }
   } catch {}
 
+  if (isFirestoreQuotaExceeded()) return DEFAULT_ATTENDANCE_SETTINGS;
+
   try {
     const snap = await getDoc(doc(db, 'app_settings', GLOBAL_CONFIG_DOC));
     if (snap.exists()) {
@@ -77,7 +79,7 @@ export async function getGlobalAttendanceSettings(): Promise<AttendanceSettings>
       return settings;
     }
   } catch (err) {
-    console.warn('Using default global attendance settings:', err);
+    handleFirestoreError('getGlobalAttendanceSettings', err);
   }
 
   return DEFAULT_ATTENDANCE_SETTINGS;
@@ -89,12 +91,13 @@ export async function getGlobalAttendanceSettings(): Promise<AttendanceSettings>
 export async function saveGlobalAttendanceSettings(settings: AttendanceSettings): Promise<void> {
   try {
     localStorage.setItem('fieldops_global_attendance_settings', JSON.stringify(settings));
+    if (isFirestoreQuotaExceeded()) return;
     await setDoc(doc(db, 'app_settings', GLOBAL_CONFIG_DOC), {
       ...settings,
       updatedAt: serverTimestamp()
     }, { merge: true });
   } catch (err) {
-    console.warn('Saved global attendance settings locally:', err);
+    handleFirestoreError('saveGlobalAttendanceSettings', err);
   }
 }
 
@@ -109,6 +112,8 @@ export async function getStaffAttendanceConfig(userId: string): Promise<StaffAtt
     }
   } catch {}
 
+  if (isFirestoreQuotaExceeded()) return { userId, useGlobalDefaults: true };
+
   try {
     const snap = await getDoc(doc(db, STAFF_CONFIG_COLLECTION, userId));
     if (snap.exists()) {
@@ -116,7 +121,9 @@ export async function getStaffAttendanceConfig(userId: string): Promise<StaffAtt
       localStorage.setItem(`fieldops_staff_attendance_config_${userId}`, JSON.stringify(cfg));
       return cfg;
     }
-  } catch {}
+  } catch (err) {
+    handleFirestoreError('getStaffAttendanceConfig', err);
+  }
 
   return {
     userId,
@@ -130,12 +137,13 @@ export async function getStaffAttendanceConfig(userId: string): Promise<StaffAtt
 export async function saveStaffAttendanceConfig(cfg: StaffAttendanceConfig): Promise<void> {
   try {
     localStorage.setItem(`fieldops_staff_attendance_config_${cfg.userId}`, JSON.stringify(cfg));
+    if (isFirestoreQuotaExceeded()) return;
     await setDoc(doc(db, STAFF_CONFIG_COLLECTION, cfg.userId), {
       ...cfg,
       updatedAt: serverTimestamp()
     }, { merge: true });
   } catch (err) {
-    console.warn('Saved staff attendance config locally:', err);
+    handleFirestoreError('saveStaffAttendanceConfig', err);
   }
 }
 
@@ -263,15 +271,17 @@ export async function ensureTodaySchedule(userId: string, userName: string): Pro
   const docId = `${userId}_${today}`;
   const docRef = doc(db, ATTENDANCE_COLLECTION, docId);
 
-  try {
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data() as AttendanceDay;
-      setLocalScheduleCache(userId, today, data);
-      return data;
+  if (!isFirestoreQuotaExceeded()) {
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data() as AttendanceDay;
+        setLocalScheduleCache(userId, today, data);
+        return data;
+      }
+    } catch (err) {
+      handleFirestoreError('ensureTodaySchedule getDoc', err);
     }
-  } catch (err) {
-    console.warn('Could not read attendance schedule from Firestore, using local fallback:', err);
   }
 
   // Create new schedule based on user policy
@@ -292,13 +302,15 @@ export async function ensureTodaySchedule(userId: string, userName: string): Pro
 
   setLocalScheduleCache(userId, today, day);
 
-  try {
-    await setDoc(docRef, {
-      ...day,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-  } catch (err) {
-    console.warn('Saved schedule locally, cloud write queued:', err);
+  if (!isFirestoreQuotaExceeded()) {
+    try {
+      await setDoc(docRef, {
+        ...day,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError('ensureTodaySchedule setDoc', err);
+    }
   }
 
   return day;
@@ -377,16 +389,18 @@ export async function markAttendanceSlot(
 
   // Update Firestore
   const docId = `${userId}_${today}`;
-  try {
-    await setDoc(doc(db, ATTENDANCE_COLLECTION, docId), {
-      userId,
-      userName,
-      date: today,
-      slots: cached.slots,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-  } catch (err) {
-    console.warn('Saved attendance slot locally, cloud sync pending:', err);
+  if (!isFirestoreQuotaExceeded()) {
+    try {
+      await setDoc(doc(db, ATTENDANCE_COLLECTION, docId), {
+        userId,
+        userName,
+        date: today,
+        slots: cached.slots,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError('markAttendanceSlot setDoc', err);
+    }
   }
 
   return markedSlot;
@@ -417,16 +431,18 @@ export async function markMissedSlot(
     setLocalScheduleCache(userId, today, cached);
 
     const docId = `${userId}_${today}`;
-    try {
-      await setDoc(doc(db, ATTENDANCE_COLLECTION, docId), {
-        userId,
-        userName,
-        date: today,
-        slots: cached.slots,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-    } catch (err) {
-      console.warn('Saved missed slot status locally:', err);
+    if (!isFirestoreQuotaExceeded()) {
+      try {
+        await setDoc(doc(db, ATTENDANCE_COLLECTION, docId), {
+          userId,
+          userName,
+          date: today,
+          slots: cached.slots,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (err) {
+        handleFirestoreError('markMissedSlot setDoc', err);
+      }
     }
   }
 }
@@ -442,6 +458,8 @@ export function subscribeAttendanceToday(
   const local = getLocalScheduleCache(userId, today);
   if (local) callback(local);
 
+  if (isFirestoreQuotaExceeded()) return () => {};
+
   const docId = `${userId}_${today}`;
   try {
     return onSnapshot(doc(db, ATTENDANCE_COLLECTION, docId), (snap) => {
@@ -453,11 +471,11 @@ export function subscribeAttendanceToday(
         callback(local);
       }
     }, (err) => {
-      console.warn('Attendance listener warning:', err);
+      handleFirestoreError('subscribeAttendanceToday', err);
       callback(local);
     });
   } catch (err) {
-    console.warn('Failed to subscribe to attendance:', err);
+    handleFirestoreError('Failed to subscribe to attendance', err);
     callback(local);
     return () => {};
   }
@@ -467,6 +485,8 @@ export function subscribeAttendanceToday(
  * Fetches attendance days for admin search across all users or a specific user
  */
 export async function getAttendanceHistory(userId?: string): Promise<AttendanceDay[]> {
+  if (isFirestoreQuotaExceeded()) return [];
+
   try {
     let q;
     if (userId) {
@@ -477,7 +497,7 @@ export async function getAttendanceHistory(userId?: string): Promise<AttendanceD
     const snap = await getDocs(q);
     return snap.docs.map(docSnap => docSnap.data() as AttendanceDay);
   } catch (err) {
-    console.warn('Failed to fetch attendance history:', err);
+    handleFirestoreError('getAttendanceHistory', err);
     return [];
   }
 }

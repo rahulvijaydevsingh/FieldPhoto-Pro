@@ -9,7 +9,8 @@ import {
   onSnapshot, 
   getDocs,
   query,
-  orderBy
+  orderBy,
+  disableNetwork
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { Photo, User, FollowUp, RecycleItem } from '../types';
@@ -34,15 +35,46 @@ const FOLLOWUPS_COL = 'followups';
 const RECYCLE_COL = 'recycle_bin';
 const SETTINGS_COL = 'app_settings';
 const BREADCRUMBS_COL = 'route_breadcrumbs';
+const ODOMETER_COL = 'odometer_readings';
 
 // Helper to handle Firestore quota or connection errors gracefully
-let isQuotaExceeded = false;
+let isQuotaExceeded = typeof window !== 'undefined' && (
+  sessionStorage.getItem('fieldops_firestore_quota_exceeded') === 'true' ||
+  localStorage.getItem('fieldops_firestore_quota_exceeded') === 'true'
+);
 
-function handleFirestoreError(context: string, err: any) {
-  if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota limit exceeded') || err?.code === 'unavailable') {
+if (isQuotaExceeded) {
+  try {
+    disableNetwork(db).catch(() => {});
+  } catch {}
+}
+
+export function isFirestoreQuotaExceeded(): boolean {
+  return isQuotaExceeded;
+}
+
+export function handleFirestoreError(context: string, err: any) {
+  const errCode = String(err?.code || '').toLowerCase();
+  const errMsg = String(err?.message || err || '').toLowerCase();
+
+  if (
+    errCode === 'resource-exhausted' ||
+    errCode === 'firestore/resource-exhausted' ||
+    errMsg.includes('resource-exhausted') ||
+    errMsg.includes('quota limit exceeded') ||
+    errMsg.includes('quota exceeded') ||
+    errMsg.includes('quota')
+  ) {
     if (!isQuotaExceeded) {
       isQuotaExceeded = true;
-      console.warn(`[Firestore Quota Limit] ${context}: Free daily quota limit exceeded. Operating smoothly using local device storage.`);
+      try {
+        sessionStorage.setItem('fieldops_firestore_quota_exceeded', 'true');
+        localStorage.setItem('fieldops_firestore_quota_exceeded', 'true');
+      } catch {}
+      try {
+        disableNetwork(db).catch(() => {});
+      } catch {}
+      console.warn(`[Firestore Quota Limit] ${context}: Free daily write/read quota limit reached. Application will operate seamlessly using local device storage.`);
     }
   } else {
     console.error(`[Firestore Error] ${context}:`, err);
@@ -57,14 +89,20 @@ export interface AppSettings {
 }
 
 export function subscribeAppSettings(onUpdate: (settings: AppSettings) => void) {
-  const docRef = doc(db, SETTINGS_COL, 'global_config');
-  return onSnapshot(docRef, (snapshot) => {
-    if (snapshot.exists()) {
-      onUpdate(snapshot.data() as AppSettings);
-    }
-  }, (err) => {
-    handleFirestoreError('Listening to app settings', err);
-  });
+  if (isQuotaExceeded) return () => {};
+  try {
+    const docRef = doc(db, SETTINGS_COL, 'global_config');
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        onUpdate(snapshot.data() as AppSettings);
+      }
+    }, (err) => {
+      handleFirestoreError('Listening to app settings', err);
+    });
+  } catch (err) {
+    handleFirestoreError('Subscribing to app settings', err);
+    return () => {};
+  }
 }
 
 export async function saveAppSettingsToFirestore(settings: Partial<AppSettings>) {
@@ -89,13 +127,19 @@ export async function fetchTeamMembersDirectly(): Promise<User[]> {
 
 // --- PHOTOS ---
 export function subscribePhotos(onUpdate: (photos: Photo[]) => void) {
-  const q = query(collection(db, PHOTOS_COL));
-  return onSnapshot(q, (snapshot) => {
-    const photos: Photo[] = snapshot.docs.map(doc => doc.data() as Photo);
-    onUpdate(photos);
-  }, (err) => {
-    handleFirestoreError('Listening to photos', err);
-  });
+  if (isQuotaExceeded) return () => {};
+  try {
+    const q = query(collection(db, PHOTOS_COL));
+    return onSnapshot(q, (snapshot) => {
+      const photos: Photo[] = snapshot.docs.map(doc => doc.data() as Photo);
+      onUpdate(photos);
+    }, (err) => {
+      handleFirestoreError('Listening to photos', err);
+    });
+  } catch (err) {
+    handleFirestoreError('Subscribing to photos', err);
+    return () => {};
+  }
 }
 
 export async function savePhotoToFirestore(photo: Photo) {
@@ -119,13 +163,19 @@ export async function deletePhotoFromFirestore(photoId: string) {
 
 // --- TEAM MEMBERS ---
 export function subscribeTeamMembers(onUpdate: (members: User[]) => void) {
-  const q = query(collection(db, TEAM_COL));
-  return onSnapshot(q, (snapshot) => {
-    const members: User[] = snapshot.docs.map(doc => doc.data() as User);
-    onUpdate(members);
-  }, (err) => {
-    handleFirestoreError('Listening to team members', err);
-  });
+  if (isQuotaExceeded) return () => {};
+  try {
+    const q = query(collection(db, TEAM_COL));
+    return onSnapshot(q, (snapshot) => {
+      const members: User[] = snapshot.docs.map(doc => doc.data() as User);
+      onUpdate(members);
+    }, (err) => {
+      handleFirestoreError('Listening to team members', err);
+    });
+  } catch (err) {
+    handleFirestoreError('Subscribing to team members', err);
+    return () => {};
+  }
 }
 
 export async function saveTeamMemberToFirestore(member: User) {
@@ -140,13 +190,19 @@ export async function saveTeamMemberToFirestore(member: User) {
 
 // --- FOLLOW UPS ---
 export function subscribeFollowUps(onUpdate: (followUps: FollowUp[]) => void) {
-  const q = query(collection(db, FOLLOWUPS_COL));
-  return onSnapshot(q, (snapshot) => {
-    const followUps: FollowUp[] = snapshot.docs.map(doc => doc.data() as FollowUp);
-    onUpdate(followUps);
-  }, (err) => {
-    handleFirestoreError('Listening to followups', err);
-  });
+  if (isQuotaExceeded) return () => {};
+  try {
+    const q = query(collection(db, FOLLOWUPS_COL));
+    return onSnapshot(q, (snapshot) => {
+      const followUps: FollowUp[] = snapshot.docs.map(doc => doc.data() as FollowUp);
+      onUpdate(followUps);
+    }, (err) => {
+      handleFirestoreError('Listening to followups', err);
+    });
+  } catch (err) {
+    handleFirestoreError('Subscribing to followups', err);
+    return () => {};
+  }
 }
 
 export async function saveFollowUpToFirestore(followUp: FollowUp) {
@@ -161,13 +217,19 @@ export async function saveFollowUpToFirestore(followUp: FollowUp) {
 
 // --- RECYCLE BIN ---
 export function subscribeRecycleBin(onUpdate: (items: RecycleItem[]) => void) {
-  const q = query(collection(db, RECYCLE_COL));
-  return onSnapshot(q, (snapshot) => {
-    const items: RecycleItem[] = snapshot.docs.map(doc => doc.data() as RecycleItem);
-    onUpdate(items);
-  }, (err) => {
-    handleFirestoreError('Listening to recycle bin', err);
-  });
+  if (isQuotaExceeded) return () => {};
+  try {
+    const q = query(collection(db, RECYCLE_COL));
+    return onSnapshot(q, (snapshot) => {
+      const items: RecycleItem[] = snapshot.docs.map(doc => doc.data() as RecycleItem);
+      onUpdate(items);
+    }, (err) => {
+      handleFirestoreError('Listening to recycle bin', err);
+    });
+  } catch (err) {
+    handleFirestoreError('Subscribing to recycle bin', err);
+    return () => {};
+  }
 }
 
 export async function saveRecycleItemToFirestore(item: RecycleItem) {
@@ -182,13 +244,19 @@ export async function saveRecycleItemToFirestore(item: RecycleItem) {
 
 // --- ROUTE BREADCRUMBS (CROSS-DEVICE STAFF MOVEMENT TRACKING) ---
 export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void) {
-  const q = query(collection(db, BREADCRUMBS_COL));
-  return onSnapshot(q, (snapshot) => {
-    const breadcrumbs = snapshot.docs.map(doc => doc.data());
-    onUpdate(breadcrumbs);
-  }, (err) => {
-    handleFirestoreError('Listening to route breadcrumbs', err);
-  });
+  if (isQuotaExceeded) return () => {};
+  try {
+    const q = query(collection(db, BREADCRUMBS_COL));
+    return onSnapshot(q, (snapshot) => {
+      const breadcrumbs = snapshot.docs.map(doc => doc.data());
+      onUpdate(breadcrumbs);
+    }, (err) => {
+      handleFirestoreError('Listening to route breadcrumbs', err);
+    });
+  } catch (err) {
+    handleFirestoreError('Subscribing to route breadcrumbs', err);
+    return () => {};
+  }
 }
 
 export async function saveRouteBreadcrumbToFirestore(breadcrumb: any) {
@@ -208,6 +276,42 @@ export async function saveRouteBreadcrumbToFirestore(breadcrumb: any) {
     await setDoc(doc(db, BREADCRUMBS_COL, docId), cleanBreadcrumb, { merge: true });
   } catch (err) {
     handleFirestoreError('Saving route breadcrumb', err);
+  }
+}
+
+// --- ODOMETER READINGS ---
+export function subscribeOdometerReadings(onUpdate: (readings: any[]) => void) {
+  if (isQuotaExceeded) return () => {};
+  try {
+    const q = query(collection(db, ODOMETER_COL), orderBy('timestamp', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const readings = snapshot.docs.map(doc => doc.data());
+      onUpdate(readings);
+    }, (err) => {
+      handleFirestoreError('Listening to odometer readings', err);
+    });
+  } catch (err) {
+    handleFirestoreError('Subscribing to odometer readings', err);
+    return () => {};
+  }
+}
+
+export async function saveOdometerToFirestore(reading: any) {
+  if (isQuotaExceeded || !reading || !reading.id) return;
+  try {
+    const cleanReading = JSON.parse(JSON.stringify(reading));
+    await setDoc(doc(db, ODOMETER_COL, reading.id), cleanReading, { merge: true });
+  } catch (err) {
+    handleFirestoreError('Saving odometer reading', err);
+  }
+}
+
+export async function deleteOdometerFromFirestore(readingId: string) {
+  if (isQuotaExceeded || !readingId) return;
+  try {
+    await deleteDoc(doc(db, ODOMETER_COL, readingId));
+  } catch (err) {
+    handleFirestoreError('Deleting odometer reading', err);
   }
 }
 

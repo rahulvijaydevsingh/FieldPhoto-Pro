@@ -1,4 +1,5 @@
 import { OdometerReading } from '../types';
+import { saveOdometerToFirestore, deleteOdometerFromFirestore } from '../services/firebase';
 
 const STORAGE_KEY = 'fieldops_odometer_readings';
 
@@ -72,6 +73,10 @@ export function saveOdometerReading(reading: Omit<OdometerReading, 'id' | 'times
 
   const updated = [newRecord, ...existing];
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+
+  // Async sync to Firestore (silently fallback if quota exceeded or offline)
+  saveOdometerToFirestore(newRecord).catch(() => {});
+
   return newRecord;
 }
 
@@ -112,18 +117,23 @@ export function updateOdometerStatus(
   adminName?: string
 ): void {
   const existing = getLocalOdometerReadings();
+  let modifiedItem: OdometerReading | null = null;
   const updated = existing.map(r => {
     if (r.id === id) {
-      return {
+      modifiedItem = {
         ...r,
         verificationStatus: status,
         verifiedBy: adminName,
         verifiedAt: new Date().toISOString()
       };
+      return modifiedItem;
     }
     return r;
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  if (modifiedItem) {
+    saveOdometerToFirestore(modifiedItem).catch(() => {});
+  }
 }
 
 export function getUserSavedVehicleNumber(userId: string): string {
@@ -153,4 +163,5 @@ export function deleteOdometerReading(id: string): void {
   const existing = getLocalOdometerReadings();
   const updated = existing.filter(r => r.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  deleteOdometerFromFirestore(id).catch(() => {});
 }

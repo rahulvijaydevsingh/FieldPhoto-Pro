@@ -6,7 +6,7 @@ import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
 import { offlineSyncEngine } from '../system/sync/OfflineSyncEngine';
 import { haversineMeters } from './distance';
 import { getDeviceId, getFullDeviceInfo } from './deviceFingerprint';
-import { saveRouteBreadcrumbToFirestore } from '../services/firebase';
+import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded } from '../services/firebase';
 import { 
   getCachedGeofences, 
   geofenceContainsPoint, 
@@ -74,8 +74,8 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       const dist = getDistanceMeters(last.lat, last.lng, point.lat, point.lng);
       const timeDiffMs = new Date(point.timestamp).getTime() - new Date(last.timestamp).getTime();
 
-      // Skip duplicate pings if device hasn't moved at least 15m and less than 3 minutes have passed
-      if (dist < 15 && timeDiffMs < 180000) {
+      // Skip duplicate pings if device hasn't moved at least 15m and less than 5 minutes (300,000ms) have passed
+      if (dist < 15 && timeDiffMs < 300000) {
         return route;
       }
     }
@@ -126,7 +126,7 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
     const trimmed = route.slice(-500);
     localStorage.setItem(key, JSON.stringify(trimmed));
 
-    // Also update global shared route store and Firestore so Admin panel on any device receives staff breadcrumbs
+    // Update local device cache & enqueue breadcrumb into 5-minute batch flusher
     try {
       const sharedStr = localStorage.getItem(SHARED_ROUTE_KEY);
       const sharedRoute: RouteBreadcrumb[] = sharedStr ? JSON.parse(sharedStr) : [];
@@ -135,21 +135,37 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       localStorage.setItem(SHARED_ROUTE_KEY, JSON.stringify(sharedRoute.slice(-1000)));
       window.dispatchEvent(new Event('fieldops_sync'));
 
-      // Cloud-first direct write to Firestore (with offline queue backup)
-      saveRouteBreadcrumbToFirestore(point).catch(e => console.warn('Direct Firestore breadcrumb warning:', e));
+      const isCoreEvent = ['PHOTO_UPLOAD', 'ATTENDANCE_CHECK', 'ODOMETER_ENTRY'].includes(point.sourceEvent || '');
 
-      // Enqueue in OfflineSyncEngine for offline durability
-      offlineSyncEngine.enqueueBreadcrumb({
-        lat: point.lat,
-        lng: point.lng,
-        accuracy: point.accuracy,
-        speed: point.speed,
-        plusCode: point.plusCode,
-        timestamp: point.timestamp,
-        deviceInfo: point.deviceInfo,
-        userId: point.userId || 'staff_u1',
-        userName: point.userName || 'Field Staff',
-      });
+      if (isCoreEvent) {
+        // Direct write for critical high-priority core events
+        saveRouteBreadcrumbToFirestore(point).catch(() => {
+          offlineSyncEngine.enqueueBreadcrumb({
+            lat: point.lat,
+            lng: point.lng,
+            accuracy: point.accuracy,
+            speed: point.speed,
+            plusCode: point.plusCode,
+            timestamp: point.timestamp,
+            deviceInfo: point.deviceInfo,
+            userId: point.userId || 'staff_u1',
+            userName: point.userName || 'Field Staff',
+          });
+        });
+      } else {
+        // Background breadcrumbs: Enqueue into 5-minute batch flusher
+        offlineSyncEngine.enqueueBreadcrumb({
+          lat: point.lat,
+          lng: point.lng,
+          accuracy: point.accuracy,
+          speed: point.speed,
+          plusCode: point.plusCode,
+          timestamp: point.timestamp,
+          deviceInfo: point.deviceInfo,
+          userId: point.userId || 'staff_u1',
+          userName: point.userName || 'Field Staff',
+        });
+      }
     } catch (e) {}
 
     return trimmed;

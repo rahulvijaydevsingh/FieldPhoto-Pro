@@ -217,33 +217,6 @@ export default function LoginScreen() {
             LOG IN
           </button>
         </form>
-
-        {/* Authorized Registered Profiles Notice */}
-        <div className="mt-8 p-4 rounded-xl border border-[#3A2E2E] bg-[#1A1515] text-xs space-y-2">
-          <div className="flex items-center justify-between text-gray-400 font-bold uppercase tracking-wider text-[10px]">
-            <span>Registered Access Profiles</span>
-            <span className="text-field-gold font-bold">2 Active</span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <div 
-              onClick={() => { setLoginEmail('nipun@company.com'); setLoginPassword('admin'); setLoginError(null); }}
-              className="p-2.5 rounded-lg border border-[#3A2E2E] bg-[#2D2424] hover:border-field-gold/60 cursor-pointer transition-all"
-            >
-              <p className="font-bold text-white text-xs">Nipun Tantia</p>
-              <p className="text-[10px] text-field-gold font-semibold uppercase">Admin Profile</p>
-              <p className="text-[10px] text-gray-500 font-mono mt-1">nipun@company.com</p>
-            </div>
-
-            <div 
-              onClick={() => { setLoginEmail('meera@maharajacrm.com'); setLoginPassword('Amanpreet@93'); setLoginError(null); }}
-              className="p-2.5 rounded-lg border border-[#3A2E2E] bg-[#2D2424] hover:border-field-gold/60 cursor-pointer transition-all"
-            >
-              <p className="font-bold text-white text-xs">Amanpreet</p>
-              <p className="text-[10px] text-emerald-400 font-semibold uppercase">Staff Profile</p>
-              <p className="text-[10px] text-gray-500 font-mono mt-1">meera@maharajacrm.com</p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
