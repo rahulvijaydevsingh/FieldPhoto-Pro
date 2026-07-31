@@ -24,6 +24,7 @@
 import { PendingPhotoItem, PendingBreadcrumbItem, OfflineSyncEngineStats } from './types';
 import { breadcrumbRepository } from '../../repositories/breadcrumbRepository';
 import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded } from '../../services/firebase';
+import { TelemetryTrainManager } from './TelemetryTrainManager';
 
 export class OfflineSyncEngine {
   private isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -129,46 +130,35 @@ export class OfflineSyncEngine {
     let photosFlushed = 0;
     let breadcrumbsFlushed = 0;
 
-    // 1. Flush Staff Telemetry Breadcrumbs in Batch
-    if (this.pendingBreadcrumbs.length > 0) {
-      const itemsToSync = [...this.pendingBreadcrumbs];
-      for (const bc of itemsToSync) {
-        bc.syncStatus = 'SYNCING';
-      }
-      this.saveStorage();
-
-      try {
-        // Bulk sync breadcrumbs directly to Firestore
+    // 1. Flush Staff Telemetry Breadcrumbs via Bundled Telemetry Train (Single Write)
+    try {
+      if (this.pendingBreadcrumbs.length > 0) {
+        const itemsToSync = [...this.pendingBreadcrumbs];
         for (const bc of itemsToSync) {
-          if (isFirestoreQuotaExceeded()) break;
-          try {
-            await saveRouteBreadcrumbToFirestore({
-              lat: bc.lat,
-              lng: bc.lng,
-              timestamp: bc.timestamp,
-              plusCode: bc.plusCode,
-              speed: bc.speed,
-              deviceInfo: bc.deviceInfo,
-              userId: bc.userId,
-              userName: bc.userName,
-            });
-            breadcrumbsFlushed++;
-            this.totalBreadcrumbsSynced++;
-            bc.syncStatus = 'SYNCED';
-          } catch (e) {
-            bc.syncStatus = 'FAILED';
-            bc.retryCount++;
-            if (isFirestoreQuotaExceeded()) break;
-          }
+          TelemetryTrainManager.getInstance().enqueuePing({
+            lat: bc.lat,
+            lng: bc.lng,
+            accuracy: bc.accuracy,
+            speed: bc.speed,
+            plusCode: bc.plusCode,
+            timestamp: bc.timestamp,
+            deviceInfo: bc.deviceInfo,
+            userId: bc.userId,
+            userName: bc.userName,
+          });
         }
-
-        // Remove successfully flushed or max-retried breadcrumbs
-        this.pendingBreadcrumbs = this.pendingBreadcrumbs.filter(
-          (b) => b.syncStatus !== 'SYNCED' && b.retryCount < 5
-        );
-      } catch (err) {
-        console.warn('Breadcrumb sync batch error:', err);
       }
+
+      // Dispatch single bundled write to Firestore
+      const trainSuccess = await TelemetryTrainManager.getInstance().dispatchTrain('timer');
+      if (trainSuccess && this.pendingBreadcrumbs.length > 0) {
+        breadcrumbsFlushed = this.pendingBreadcrumbs.length;
+        this.totalBreadcrumbsSynced += breadcrumbsFlushed;
+        this.pendingBreadcrumbs = [];
+        this.saveStorage();
+      }
+    } catch (err) {
+      console.warn('Breadcrumb sync train batch error:', err);
     }
 
     // 2. Flush Pending Photo Items

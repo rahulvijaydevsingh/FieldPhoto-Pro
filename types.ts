@@ -271,3 +271,63 @@ export const MATERIAL_INTERESTS = [
   'Sandstone', 'Tiles', 'Onyx', 'Engineered Marble',
   'Cladding Stone', 'Wooden Flooring', 'Other'
 ];
+
+export interface RouteBreadcrumb {
+  id?: string;
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  timestamp: string; // ISO string
+  plusCode?: string;
+  speed?: number | null;
+  altitude?: number | null;
+  heading?: number | null;
+  deviceInfo?: string;
+  deviceId?: string;
+  osVersion?: string;
+  deviceModel?: string;
+  batteryLevel?: number;
+  networkType?: string;
+  userId?: string;
+  userName?: string;
+  geofenceIds?: string[];
+  
+  // Forensic tracking attributes
+  sourceEvent?: 'APP_LOAD' | 'PHOTO_UPLOAD' | 'ATTENDANCE_CHECK' | 'HEARTBEAT' | 'MANUAL' | 'ROUTE_TRACKER';
+  photoUploadSource?: 'DIRECT_CAPTURE' | 'GALLERY';
+  locationProvider?: 'GPS_HARDWARE' | 'WIFI_GOOGLE' | 'CELL_TOWER' | 'EXIF_FALLBACK';
+  isMocked?: boolean;
+  exifDateTimeOriginal?: string;
+  exifCameraMake?: string;
+  exifCameraModel?: string;
+  photoId?: string;
+  attendanceId?: string;
+  flags?: string[];
+}
+
+export interface TelemetryPresence {
+  userId: string;
+  userName?: string;
+  isOnline: boolean;
+  lastSeenTime: string; // ISO string
+  deviceInfo?: string;
+  batteryLevel?: number;
+}
+
+export interface TelemetryTrainDoc {
+  type: 'telemetry_train';
+  batchId: string;
+  userId: string;
+  userName?: string;
+  sessionId: string;
+  sessionPart: number;
+  fromTs: number;
+  toTs: number;
+  count: number;
+  pings: RouteBreadcrumb[];
+  geofenceEvents?: GeofenceEvent[];
+  presence?: TelemetryPresence;
+  dispatchReason: 'timer' | 'priority_event' | 'manual' | 'unload' | 'size_overflow';
+  createdAt: string;
+}
+

@@ -462,7 +462,8 @@ export function subscribeAttendanceToday(
 
   const docId = `${userId}_${today}`;
   try {
-    return onSnapshot(doc(db, ATTENDANCE_COLLECTION, docId), (snap) => {
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(doc(db, ATTENDANCE_COLLECTION, docId), (snap) => {
       if (snap.exists()) {
         const data = snap.data() as AttendanceDay;
         setLocalScheduleCache(userId, today, data);
@@ -472,8 +473,10 @@ export function subscribeAttendanceToday(
       }
     }, (err) => {
       handleFirestoreError('subscribeAttendanceToday', err);
+      if (unsub) unsub();
       callback(local);
     });
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Failed to subscribe to attendance', err);
     callback(local);

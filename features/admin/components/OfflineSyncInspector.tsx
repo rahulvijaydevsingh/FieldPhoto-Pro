@@ -19,18 +19,22 @@ import {
 } from 'lucide-react';
 import { offlineSyncEngine } from '../../../system/sync/OfflineSyncEngine';
 import { OfflineSyncEngineStats, PendingPhotoItem, PendingBreadcrumbItem } from '../../../system/sync/types';
+import { TelemetryTrainManager, TelemetryTrainMetrics } from '../../../system/sync/TelemetryTrainManager';
 
 export default function OfflineSyncInspector() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'blueprint'>('dashboard');
   const [stats, setStats] = useState<OfflineSyncEngineStats>(offlineSyncEngine.getStats());
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhotoItem[]>(offlineSyncEngine.getPendingPhotos());
   const [pendingBreadcrumbs, setPendingBreadcrumbs] = useState<PendingBreadcrumbItem[]>(offlineSyncEngine.getPendingBreadcrumbs());
+  const [trainMetrics, setTrainMetrics] = useState<TelemetryTrainMetrics>(TelemetryTrainManager.getInstance().getMetrics());
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isDispatchingTrain, setIsDispatchingTrain] = useState<boolean>(false);
 
   const refreshState = () => {
     setStats(offlineSyncEngine.getStats());
     setPendingPhotos(offlineSyncEngine.getPendingPhotos());
     setPendingBreadcrumbs(offlineSyncEngine.getPendingBreadcrumbs());
+    setTrainMetrics(TelemetryTrainManager.getInstance().getMetrics());
   };
 
   useEffect(() => {
@@ -60,7 +64,7 @@ export default function OfflineSyncInspector() {
   };
 
   const handleAddSampleBreadcrumb = () => {
-    offlineSyncEngine.enqueueBreadcrumb({
+    const pt = {
       lat: 30.6782 + (Math.random() - 0.5) * 0.01,
       lng: 76.7291 + (Math.random() - 0.5) * 0.01,
       accuracy: 5,
@@ -70,7 +74,9 @@ export default function OfflineSyncInspector() {
       deviceInfo: 'Samsung Galaxy Tab Active3',
       userId: 'u_field_worker',
       userName: 'Field Inspector',
-    });
+    };
+    offlineSyncEngine.enqueueBreadcrumb(pt);
+    TelemetryTrainManager.getInstance().enqueuePing(pt);
     refreshState();
   };
 
@@ -80,6 +86,16 @@ export default function OfflineSyncInspector() {
       await offlineSyncEngine.triggerBatchSync();
     } finally {
       setIsSyncing(false);
+      refreshState();
+    }
+  };
+
+  const handleDispatchTrainNow = async () => {
+    setIsDispatchingTrain(true);
+    try {
+      await TelemetryTrainManager.getInstance().dispatchTrain('manual');
+    } finally {
+      setIsDispatchingTrain(false);
       refreshState();
     }
   };
@@ -176,6 +192,49 @@ export default function OfflineSyncInspector() {
               </span>
               <div className="text-xl font-bold text-purple-400">
                 {stats.totalBreadcrumbsSynced} <span className="text-xs text-gray-500">flushed</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Phase 5: Single-Write Telemetry Train Diagnostics */}
+          <div className="bg-[#2D2424] border border-[#D99026]/40 p-4 rounded-xl space-y-3">
+            <div className="flex items-center justify-between border-b border-[#3A2E2E] pb-2">
+              <span className="text-xs font-bold text-[#D99026] uppercase tracking-wider flex items-center gap-1.5">
+                <Layers size={14} /> Telemetry Train Single-Write System (Phase 1–10 Diagnostics)
+              </span>
+              <button
+                onClick={handleDispatchTrainNow}
+                disabled={isDispatchingTrain || !stats.isOnline || trainMetrics.pingsBuffered === 0}
+                className="px-3 py-1.5 bg-[#D99026] text-black rounded-lg text-xs font-bold hover:bg-[#b57b17] transition-all flex items-center gap-1 disabled:opacity-50"
+              >
+                <Play size={12} className={isDispatchingTrain ? 'animate-spin' : ''} />
+                {isDispatchingTrain ? 'Dispatching Train...' : 'Dispatch Train Now (1 Write)'}
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-center">
+              <div className="bg-[#1A1515] border border-[#3A2E2E] p-2.5 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase">Pings Buffered</div>
+                <div className="text-lg font-bold text-white">{trainMetrics.pingsBuffered}</div>
+              </div>
+              <div className="bg-[#1A1515] border border-[#3A2E2E] p-2.5 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase">Train Writes Sent</div>
+                <div className="text-lg font-bold text-emerald-400">{trainMetrics.trainWritesSent}</div>
+              </div>
+              <div className="bg-[#1A1515] border border-[#3A2E2E] p-2.5 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase">Avg Pings / Train</div>
+                <div className="text-lg font-bold text-blue-400">{trainMetrics.avgPingsPerTrain}</div>
+              </div>
+              <div className="bg-[#1A1515] border border-[#3A2E2E] p-2.5 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase">Last Dispatch Reason</div>
+                <div className="text-xs font-bold text-amber-400 mt-1 uppercase">{trainMetrics.lastDispatchReason}</div>
+              </div>
+              <div className="bg-[#1A1515] border border-[#3A2E2E] p-2.5 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase">Doc Part Count</div>
+                <div className="text-lg font-bold text-purple-400"># {trainMetrics.partCount}</div>
+              </div>
+              <div className="bg-[#1A1515] border border-[#3A2E2E] p-2.5 rounded-lg">
+                <div className="text-[10px] text-gray-400 uppercase">Last Train Size</div>
+                <div className="text-lg font-bold text-gray-300">{trainMetrics.lastTrainSizeKB} KB</div>
               </div>
             </div>
           </div>

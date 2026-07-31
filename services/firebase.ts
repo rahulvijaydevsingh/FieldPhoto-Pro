@@ -86,19 +86,26 @@ export interface AppSettings {
   leadSources: string[];
   personTypes: string[];
   constructionStages: string[];
+  telemetryEnabled?: boolean;
+  trainDispatchIntervalMs?: number;
+  heartbeatIntervalMs?: number;
+  trainCutoverTimestamp?: number;
 }
 
 export function subscribeAppSettings(onUpdate: (settings: AppSettings) => void) {
   if (isQuotaExceeded) return () => {};
   try {
     const docRef = doc(db, SETTINGS_COL, 'global_config');
-    return onSnapshot(docRef, (snapshot) => {
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(docRef, (snapshot) => {
       if (snapshot.exists()) {
         onUpdate(snapshot.data() as AppSettings);
       }
     }, (err) => {
       handleFirestoreError('Listening to app settings', err);
+      if (unsub) unsub();
     });
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Subscribing to app settings', err);
     return () => {};
@@ -130,12 +137,15 @@ export function subscribePhotos(onUpdate: (photos: Photo[]) => void) {
   if (isQuotaExceeded) return () => {};
   try {
     const q = query(collection(db, PHOTOS_COL));
-    return onSnapshot(q, (snapshot) => {
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(q, (snapshot) => {
       const photos: Photo[] = snapshot.docs.map(doc => doc.data() as Photo);
       onUpdate(photos);
     }, (err) => {
       handleFirestoreError('Listening to photos', err);
+      if (unsub) unsub();
     });
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Subscribing to photos', err);
     return () => {};
@@ -166,12 +176,15 @@ export function subscribeTeamMembers(onUpdate: (members: User[]) => void) {
   if (isQuotaExceeded) return () => {};
   try {
     const q = query(collection(db, TEAM_COL));
-    return onSnapshot(q, (snapshot) => {
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(q, (snapshot) => {
       const members: User[] = snapshot.docs.map(doc => doc.data() as User);
       onUpdate(members);
     }, (err) => {
       handleFirestoreError('Listening to team members', err);
+      if (unsub) unsub();
     });
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Subscribing to team members', err);
     return () => {};
@@ -193,12 +206,15 @@ export function subscribeFollowUps(onUpdate: (followUps: FollowUp[]) => void) {
   if (isQuotaExceeded) return () => {};
   try {
     const q = query(collection(db, FOLLOWUPS_COL));
-    return onSnapshot(q, (snapshot) => {
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(q, (snapshot) => {
       const followUps: FollowUp[] = snapshot.docs.map(doc => doc.data() as FollowUp);
       onUpdate(followUps);
     }, (err) => {
       handleFirestoreError('Listening to followups', err);
+      if (unsub) unsub();
     });
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Subscribing to followups', err);
     return () => {};
@@ -220,12 +236,15 @@ export function subscribeRecycleBin(onUpdate: (items: RecycleItem[]) => void) {
   if (isQuotaExceeded) return () => {};
   try {
     const q = query(collection(db, RECYCLE_COL));
-    return onSnapshot(q, (snapshot) => {
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(q, (snapshot) => {
       const items: RecycleItem[] = snapshot.docs.map(doc => doc.data() as RecycleItem);
       onUpdate(items);
     }, (err) => {
       handleFirestoreError('Listening to recycle bin', err);
+      if (unsub) unsub();
     });
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Subscribing to recycle bin', err);
     return () => {};
@@ -242,20 +261,81 @@ export async function saveRecycleItemToFirestore(item: RecycleItem) {
   }
 }
 
-// --- ROUTE BREADCRUMBS (CROSS-DEVICE STAFF MOVEMENT TRACKING) ---
+// --- ROUTE BREADCRUMBS & TELEMETRY TRAINS (CROSS-DEVICE STAFF MOVEMENT TRACKING) ---
 export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void) {
   if (isQuotaExceeded) return () => {};
+  let isSubscribed = true;
+  let timer: any = null;
+
+  const fetchAndNotify = async () => {
+    if (!isSubscribed || isQuotaExceeded || (typeof document !== 'undefined' && document.hidden)) return;
+    try {
+      const snap = await getDocs(collection(db, BREADCRUMBS_COL));
+      const allCrumbs: any[] = [];
+      const now = Date.now();
+      const twoDaysAgo = now - 48 * 60 * 60 * 1000;
+
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (data && data.type === 'telemetry_train' && Array.isArray(data.pings)) {
+          // Train document: unpack pings within recent window
+          if (!data.fromTs || data.fromTs >= twoDaysAgo || (now - (data.toTs || 0) < 48 * 3600000)) {
+            data.pings.forEach((p: any) => {
+              allCrumbs.push({
+                ...p,
+                batchId: data.batchId,
+                type: 'telemetry_ping',
+                userId: p.userId || data.userId,
+                userName: p.userName || data.userName,
+              });
+            });
+          }
+        } else if (data && data.lat !== undefined && data.lng !== undefined) {
+          // Legacy individual breadcrumb doc
+          allCrumbs.push(data);
+        }
+      });
+
+      if (isSubscribed) {
+        onUpdate(allCrumbs);
+      }
+    } catch (err) {
+      handleFirestoreError('Polling route breadcrumbs', err);
+    }
+  };
+
+  fetchAndNotify();
+  timer = setInterval(fetchAndNotify, 30000);
+
+  const onVisibilityChange = () => {
+    if (typeof document !== 'undefined' && !document.hidden) {
+      fetchAndNotify();
+    }
+  };
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange);
+  }
+
+  return () => {
+    isSubscribed = false;
+    if (timer) clearInterval(timer);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    }
+  };
+}
+
+export async function saveTelemetryTrainToFirestore(trainDoc: any): Promise<boolean> {
+  if (isQuotaExceeded || !trainDoc || !trainDoc.userId) return false;
   try {
-    const q = query(collection(db, BREADCRUMBS_COL));
-    return onSnapshot(q, (snapshot) => {
-      const breadcrumbs = snapshot.docs.map(doc => doc.data());
-      onUpdate(breadcrumbs);
-    }, (err) => {
-      handleFirestoreError('Listening to route breadcrumbs', err);
-    });
+    const docId = `train_${trainDoc.userId}_${trainDoc.sessionId}_p${trainDoc.sessionPart || 1}`;
+    const cleanTrainDoc = JSON.parse(JSON.stringify(trainDoc));
+    await setDoc(doc(db, BREADCRUMBS_COL, docId), cleanTrainDoc, { merge: true });
+    return true;
   } catch (err) {
-    handleFirestoreError('Subscribing to route breadcrumbs', err);
-    return () => {};
+    handleFirestoreError('Saving telemetry train', err);
+    return false;
   }
 }
 
@@ -284,12 +364,15 @@ export function subscribeOdometerReadings(onUpdate: (readings: any[]) => void) {
   if (isQuotaExceeded) return () => {};
   try {
     const q = query(collection(db, ODOMETER_COL), orderBy('timestamp', 'desc'));
-    return onSnapshot(q, (snapshot) => {
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(q, (snapshot) => {
       const readings = snapshot.docs.map(doc => doc.data());
       onUpdate(readings);
     }, (err) => {
       handleFirestoreError('Listening to odometer readings', err);
+      if (unsub) unsub();
     });
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Subscribing to odometer readings', err);
     return () => {};

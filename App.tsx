@@ -10,6 +10,7 @@ import { useNightlyLogout } from './system/useNightlyLogout';
 import { useThemeManager } from './system/useThemeManager';
 import { useGpsSideEffects } from './system/useGpsSideEffects';
 import { useRandomAttendanceCheck } from './system/useRandomAttendanceCheck';
+import { TelemetryTrainManager } from './system/sync/TelemetryTrainManager';
 import AttendanceModal from './components/AttendanceModal';
 
 export default function App() {
@@ -48,6 +49,9 @@ export default function App() {
         if (realtimeSettings.leadSources) setLeadSources(realtimeSettings.leadSources);
         if (realtimeSettings.personTypes) setPersonTypes(realtimeSettings.personTypes);
         if (realtimeSettings.constructionStages) setConstructionStages(realtimeSettings.constructionStages);
+        if (realtimeSettings.telemetryEnabled !== undefined) {
+          TelemetryTrainManager.getInstance().setTelemetryEnabled(realtimeSettings.telemetryEnabled);
+        }
       }
     });
 

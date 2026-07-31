@@ -4,6 +4,7 @@
 import { getDeviceModelInfo } from './locationUtils';
 import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
 import { offlineSyncEngine } from '../system/sync/OfflineSyncEngine';
+import { TelemetryTrainManager } from '../system/sync/TelemetryTrainManager';
 import { haversineMeters } from './distance';
 import { getDeviceId, getFullDeviceInfo } from './deviceFingerprint';
 import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded } from '../services/firebase';
@@ -135,9 +136,15 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       localStorage.setItem(SHARED_ROUTE_KEY, JSON.stringify(sharedRoute.slice(-1000)));
       window.dispatchEvent(new Event('fieldops_sync'));
 
+      // Enqueue ping into TelemetryTrainManager buffer
+      TelemetryTrainManager.getInstance().enqueuePing(point);
+
       const isCoreEvent = ['PHOTO_UPLOAD', 'ATTENDANCE_CHECK', 'ODOMETER_ENTRY'].includes(point.sourceEvent || '');
 
       if (isCoreEvent) {
+        // Phase 2: Priority event triggers immediate piggybacked train dispatch
+        TelemetryTrainManager.getInstance().dispatchTrain('priority_event').catch(() => {});
+
         // Direct write for critical high-priority core events
         saveRouteBreadcrumbToFirestore(point).catch(() => {
           offlineSyncEngine.enqueueBreadcrumb({
@@ -201,15 +208,18 @@ export function getSharedRouteLogs(userId?: string, userName?: string, cloudBrea
     
     // Merge cloud, shared, and local breadcrumbs seamlessly using exact timestamp & coordinates
     const combinedMap = new Map<string, RouteBreadcrumb>();
-    [...cloud, ...allShared, ...localToday].forEach(item => {
+    [...cloud, ...allShared, ...localToday].forEach((item, idx) => {
       if (!item || item.lat === undefined || item.lng === undefined) return;
       const ts = (item.timestamp && !isNaN(new Date(item.timestamp).getTime())) 
         ? new Date(item.timestamp).getTime() 
         : 0;
-      // Key by exact timestamp (ms) + coords + user to prevent overwriting distinct pings
+      // Key by item ID if present, else timestamp (ms) + coords + user for exact deduplication
       const uid = item.userId || item.userName || '';
-      const key = `${uid}_${ts}_${Number(item.lat).toFixed(5)}_${Number(item.lng).toFixed(5)}`;
-      combinedMap.set(key, item);
+      const key = item.id ? `${uid}_${item.id}` : `${uid}_${ts}_${Number(item.lat).toFixed(5)}_${Number(item.lng).toFixed(5)}`;
+      const existing = combinedMap.get(key);
+      if (!existing || item.batchId) {
+        combinedMap.set(key, item);
+      }
     });
 
     let combined = Array.from(combinedMap.values());

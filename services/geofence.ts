@@ -5,6 +5,7 @@ import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, 
 import { db, handleFirestoreError, isFirestoreQuotaExceeded } from './firebase';
 import { Geofence, GeofenceEvent } from '../types';
 import { haversineMeters, distanceToLineMeters, latitudeDeltaForMeters, longitudeDeltaForMeters } from '../utils/distance';
+import { TelemetryTrainManager } from '../system/sync/TelemetryTrainManager';
 
 // ─── 1. CIRCLE SHAPE ───
 export class GeofenceCircleShape {
@@ -247,7 +248,8 @@ export function subscribeGeofences(callback: (geofences: Geofence[]) => void): (
 
   try {
     const q = query(collection(db, GEOFENCES_COLLECTION));
-    return onSnapshot(
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(
       q,
       (snapshot) => {
         const list: Geofence[] = snapshot.docs.map(docSnap => ({
@@ -259,9 +261,11 @@ export function subscribeGeofences(callback: (geofences: Geofence[]) => void): (
       },
       (err) => {
         handleFirestoreError('subscribeGeofences', err);
+        if (unsub) unsub();
         callback(getCachedGeofences());
       }
     );
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Failed to subscribe to geofences', err);
     callback(getCachedGeofences());
@@ -282,7 +286,8 @@ export function subscribeGeofenceEvents(callback: (events: GeofenceEvent[]) => v
 
   try {
     const q = query(collection(db, GEOFENCE_EVENTS_COLLECTION), orderBy('timestamp', 'desc'), limit(100));
-    return onSnapshot(
+    let unsub: (() => void) | null = null;
+    unsub = onSnapshot(
       q,
       (snapshot) => {
         const events: GeofenceEvent[] = snapshot.docs.map(docSnap => ({
@@ -294,9 +299,11 @@ export function subscribeGeofenceEvents(callback: (events: GeofenceEvent[]) => v
       },
       (err) => {
         handleFirestoreError('subscribeGeofenceEvents', err);
+        if (unsub) unsub();
         callback(getCachedGeofenceEvents());
       }
     );
+    return unsub || (() => {});
   } catch (err) {
     handleFirestoreError('Failed to subscribe to geofence events', err);
     callback(getCachedGeofenceEvents());
@@ -361,15 +368,11 @@ export async function writeGeofenceEventToFirestore(event: Omit<GeofenceEvent, '
   localEvents.unshift(fullEvent);
   localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(localEvents.slice(0, 100)));
 
-  if (isFirestoreQuotaExceeded()) return fullEvent;
-
+  // Phase 6a: Fold geofence events into TelemetryTrainManager buffer instead of individual setDoc write!
   try {
-    await setDoc(doc(db, GEOFENCE_EVENTS_COLLECTION, newId), {
-      ...fullEvent,
-      createdAt: serverTimestamp()
-    });
+    TelemetryTrainManager.getInstance().enqueueGeofenceEvent(fullEvent);
   } catch (err) {
-    handleFirestoreError('writeGeofenceEventToFirestore', err);
+    console.warn('enqueueGeofenceEvent error:', err);
   }
 
   return fullEvent;
