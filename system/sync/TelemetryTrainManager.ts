@@ -79,21 +79,42 @@ export class TelemetryTrainManager {
   private saveStorage(): void {
     if (typeof window === 'undefined') return;
     try {
+      // Gap 4: Limit offline local queue to 500 items max (FIFO) to avoid QuotaExceededError
+      if (this.pingsQueue.length > 500) {
+        this.pingsQueue = this.pingsQueue.slice(-500);
+      }
       localStorage.setItem('fpro_telemetry_train_queue', JSON.stringify(this.pingsQueue));
       localStorage.setItem('fpro_telemetry_train_geofences', JSON.stringify(this.geofencesQueue));
       this.metrics.pingsBuffered = this.pingsQueue.length;
       localStorage.setItem('fpro_telemetry_train_metrics', JSON.stringify(this.metrics));
-    } catch (err) {
+    } catch (err: any) {
       console.warn('TelemetryTrainManager saveStorage error:', err);
+      // Graceful QuotaExceeded recovery: evict oldest 25% and retry once
+      if (err?.name === 'QuotaExceededError' || err?.message?.includes('quota')) {
+        try {
+          const evictCount = Math.max(1, Math.floor(this.pingsQueue.length * 0.25));
+          this.pingsQueue = this.pingsQueue.slice(evictCount);
+          localStorage.setItem('fpro_telemetry_train_queue', JSON.stringify(this.pingsQueue));
+          localStorage.setItem('fpro_telemetry_train_geofences', JSON.stringify(this.geofencesQueue));
+        } catch (retryErr) {
+          console.warn('TelemetryTrainManager saveStorage retry failed:', retryErr);
+        }
+      }
     }
   }
 
   private setupUnloadListener(): void {
     if (typeof window === 'undefined') return;
-    window.addEventListener('beforeunload', () => {
-      // Fire-and-forget sync on unload if pings exist
+    const handleUnloadOrHide = () => {
       if (this.pingsQueue.length > 0 || this.geofencesQueue.length > 0 || this.presence) {
         this.dispatchTrain('unload').catch(() => {});
+      }
+    };
+    window.addEventListener('beforeunload', handleUnloadOrHide);
+    window.addEventListener('pagehide', handleUnloadOrHide);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        handleUnloadOrHide();
       }
     });
   }
@@ -132,6 +153,9 @@ export class TelemetryTrainManager {
       this.geofencesQueue.push(ev);
       this.saveStorage();
       window.dispatchEvent(new Event('telemetry_train_updated'));
+
+      // Gap 1: Priority geofence events trigger an immediate train dispatch
+      this.dispatchTrain('priority_event').catch(() => {});
     }
   }
 

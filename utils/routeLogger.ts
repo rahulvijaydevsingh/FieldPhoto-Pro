@@ -142,23 +142,8 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       const isCoreEvent = ['PHOTO_UPLOAD', 'ATTENDANCE_CHECK', 'ODOMETER_ENTRY'].includes(point.sourceEvent || '');
 
       if (isCoreEvent) {
-        // Phase 2: Priority event triggers immediate piggybacked train dispatch
+        // Phase 2: Priority event triggers immediate piggybacked train dispatch without duplicate individual writes
         TelemetryTrainManager.getInstance().dispatchTrain('priority_event').catch(() => {});
-
-        // Direct write for critical high-priority core events
-        saveRouteBreadcrumbToFirestore(point).catch(() => {
-          offlineSyncEngine.enqueueBreadcrumb({
-            lat: point.lat,
-            lng: point.lng,
-            accuracy: point.accuracy,
-            speed: point.speed,
-            plusCode: point.plusCode,
-            timestamp: point.timestamp,
-            deviceInfo: point.deviceInfo,
-            userId: point.userId || 'staff_u1',
-            userName: point.userName || 'Field Staff',
-          });
-        });
       } else {
         // Background breadcrumbs: Enqueue into 5-minute batch flusher
         offlineSyncEngine.enqueueBreadcrumb({
@@ -213,9 +198,9 @@ export function getSharedRouteLogs(userId?: string, userName?: string, cloudBrea
       const ts = (item.timestamp && !isNaN(new Date(item.timestamp).getTime())) 
         ? new Date(item.timestamp).getTime() 
         : 0;
-      // Key by item ID if present, else timestamp (ms) + coords + user for exact deduplication
+      // Key by item ID if present, else timestamp (ms) + coords + user + batchId + index for exact deduplication (~10cm precision)
       const uid = item.userId || item.userName || '';
-      const key = item.id ? `${uid}_${item.id}` : `${uid}_${ts}_${Number(item.lat).toFixed(5)}_${Number(item.lng).toFixed(5)}`;
+      const key = item.id ? `${uid}_${item.id}` : `${uid}_${item.batchId || ''}_${ts}_${Number(item.lat).toFixed(6)}_${Number(item.lng).toFixed(6)}_${idx}`;
       const existing = combinedMap.get(key);
       if (!existing || item.batchId) {
         combinedMap.set(key, item);
