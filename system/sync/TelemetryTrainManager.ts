@@ -83,6 +83,9 @@ export class TelemetryTrainManager {
       if (this.pingsQueue.length > 500) {
         this.pingsQueue = this.pingsQueue.slice(-500);
       }
+      if (this.geofencesQueue.length > 200) {
+        this.geofencesQueue = this.geofencesQueue.slice(-200);
+      }
       localStorage.setItem('fpro_telemetry_train_queue', JSON.stringify(this.pingsQueue));
       localStorage.setItem('fpro_telemetry_train_geofences', JSON.stringify(this.geofencesQueue));
       this.metrics.pingsBuffered = this.pingsQueue.length;
@@ -238,12 +241,14 @@ export class TelemetryTrainManager {
         this.metrics.lastTrainSizeKB = Math.round(sizeBytes / 1024);
 
         // Gap 9: Pre-write size check - ensure document never exceeds 800KB safety threshold
-        if (sizeBytes > 800 * 1024 && trainDoc.pings.length > 50) {
-          console.warn(`[500KB Safety Valve] Train size (${this.metrics.lastTrainSizeKB}KB) exceeded safe threshold. Halving batch slice before write.`);
+        while (new Blob([JSON.stringify(trainDoc)]).size > 800 * 1024 && trainDoc.pings.length > 50) {
           const half = Math.floor(trainDoc.pings.length / 2);
           trainDoc.pings = trainDoc.pings.slice(0, half);
           trainDoc.count = trainDoc.pings.length;
         }
+
+        const finalSizeBytes = new Blob([JSON.stringify(trainDoc)]).size;
+        this.metrics.lastTrainSizeKB = Math.round(finalSizeBytes / 1024);
 
         const success = await saveTelemetryTrainToFirestore(trainDoc);
         if (success) {
