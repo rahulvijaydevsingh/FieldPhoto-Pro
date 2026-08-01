@@ -22,8 +22,7 @@
  */
 
 import { PendingPhotoItem, PendingBreadcrumbItem, OfflineSyncEngineStats } from './types';
-import { breadcrumbRepository } from '../../repositories/breadcrumbRepository';
-import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded, subscribeAppSettings } from '../../services/firebase';
+import { isFirestoreQuotaExceeded, subscribeAppSettings } from '../../services/firebase';
 import { TelemetryTrainManager } from './TelemetryTrainManager';
 
 export class OfflineSyncEngine {
@@ -34,7 +33,7 @@ export class OfflineSyncEngine {
   private totalBreadcrumbsSynced: number = 0;
   private lastSyncTime?: string;
   private syncTimer: any = null;
-  private dbName = 'FieldPhotoPro_OfflineDB';
+  private autoSyncIntervalMs: number = 300000;
 
   constructor() {
     this.initStorage();
@@ -201,6 +200,7 @@ export class OfflineSyncEngine {
 
   public startAutoSyncWorker(intervalMs: number = 300000): void {
     if (this.syncTimer) clearInterval(this.syncTimer);
+    this.autoSyncIntervalMs = intervalMs;
     this.syncTimer = setInterval(() => {
       if (this.isOnline && (this.pendingPhotos.length > 0 || this.pendingBreadcrumbs.length > 0)) {
         this.triggerBatchSync();
@@ -231,7 +231,7 @@ export class OfflineSyncEngine {
       totalPhotosSynced: this.totalPhotosSynced,
       totalBreadcrumbsSynced: this.totalBreadcrumbsSynced,
       lastSyncTime: this.lastSyncTime,
-      autoSyncIntervalMs: 300000,
+      autoSyncIntervalMs: this.autoSyncIntervalMs,
     };
   }
 

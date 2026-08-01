@@ -2,12 +2,9 @@
 // Stores breadcrumbs in local device storage without consuming cloud write quotas
 
 import { getDeviceModelInfo } from './locationUtils';
-import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
-import { offlineSyncEngine } from '../system/sync/OfflineSyncEngine';
 import { TelemetryTrainManager } from '../system/sync/TelemetryTrainManager';
 import { haversineMeters } from './distance';
-import { getDeviceId, getFullDeviceInfo } from './deviceFingerprint';
-import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded } from '../services/firebase';
+import { getDeviceId } from './deviceFingerprint';
 import { 
   getCachedGeofences, 
   geofenceContainsPoint, 
@@ -37,7 +34,7 @@ export interface RouteBreadcrumb {
   geofenceIds?: string[];
   
   // Forensic tracking attributes
-  sourceEvent?: 'APP_LOAD' | 'PHOTO_UPLOAD' | 'ATTENDANCE_CHECK' | 'HEARTBEAT' | 'MANUAL' | 'ROUTE_TRACKER';
+  sourceEvent?: 'APP_LOAD' | 'PHOTO_UPLOAD' | 'ATTENDANCE_CHECK' | 'HEARTBEAT' | 'MANUAL' | 'ROUTE_TRACKER' | 'ODOMETER_ENTRY';
   photoUploadSource?: 'DIRECT_CAPTURE' | 'GALLERY';
   locationProvider?: 'GPS_HARDWARE' | 'WIFI_GOOGLE' | 'CELL_TOWER' | 'EXIF_FALLBACK';
   isMocked?: boolean;
@@ -143,21 +140,8 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       const isCoreEvent = ['PHOTO_UPLOAD', 'ATTENDANCE_CHECK', 'ODOMETER_ENTRY'].includes(point.sourceEvent || '');
 
       if (isCoreEvent) {
-        // Phase 2: Priority event triggers immediate piggybacked train dispatch without duplicate individual writes
+        // Priority events piggyback an immediate train dispatch from the single queue
         TelemetryTrainManager.getInstance().dispatchTrain('priority_event').catch(() => {});
-      } else {
-        // Background breadcrumbs: Enqueue into 5-minute batch flusher
-        offlineSyncEngine.enqueueBreadcrumb({
-          lat: point.lat,
-          lng: point.lng,
-          accuracy: point.accuracy,
-          speed: point.speed,
-          plusCode: point.plusCode,
-          timestamp: point.timestamp,
-          deviceInfo: point.deviceInfo,
-          userId: point.userId || 'staff_u1',
-          userName: point.userName || 'Field Staff',
-        });
       }
     } catch (e) {}
 
