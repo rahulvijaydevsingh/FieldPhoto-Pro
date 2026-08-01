@@ -17,6 +17,7 @@ import {
 
 export interface RouteBreadcrumb {
   id?: string;
+  batchId?: string;
   lat: number;
   lng: number;
   accuracy?: number;
