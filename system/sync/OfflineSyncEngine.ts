@@ -23,7 +23,7 @@
 
 import { PendingPhotoItem, PendingBreadcrumbItem, OfflineSyncEngineStats } from './types';
 import { breadcrumbRepository } from '../../repositories/breadcrumbRepository';
-import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded } from '../../services/firebase';
+import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded, subscribeAppSettings } from '../../services/firebase';
 import { TelemetryTrainManager } from './TelemetryTrainManager';
 
 export class OfflineSyncEngine {
@@ -40,6 +40,15 @@ export class OfflineSyncEngine {
     this.initStorage();
     this.bindNetworkListeners();
     this.startAutoSyncWorker(300000); // Batch flush every 5 minutes
+    try {
+      subscribeAppSettings((settings) => {
+        if (settings?.trainDispatchIntervalMs && settings.trainDispatchIntervalMs >= 30000) {
+          this.startAutoSyncWorker(settings.trainDispatchIntervalMs);
+        }
+      });
+    } catch (e) {
+      // non-blocking
+    }
   }
 
   private initStorage(): void {

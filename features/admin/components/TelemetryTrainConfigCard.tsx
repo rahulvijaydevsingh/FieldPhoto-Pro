@@ -5,6 +5,7 @@ import { TelemetryTrainManager } from '../../../system/sync/TelemetryTrainManage
 
 export default function TelemetryTrainConfigCard() {
   const [telemetryEnabled, setTelemetryEnabled] = useState<boolean>(true);
+  const [cutoverTs, setCutoverTs] = useState<number>(0);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -12,6 +13,9 @@ export default function TelemetryTrainConfigCard() {
     const unsub = settingsRepository.subscribe((settings) => {
       if (settings && settings.telemetryEnabled !== undefined) {
         setTelemetryEnabled(settings.telemetryEnabled);
+      }
+      if (settings && settings.trainCutoverTimestamp !== undefined) {
+        setCutoverTs(settings.trainCutoverTimestamp || 0);
       }
     });
     return () => unsub();
@@ -35,6 +39,23 @@ export default function TelemetryTrainConfigCard() {
     }
   };
 
+  const handleSetCutoverNow = async () => {
+    setIsSaving(true);
+    const now = Date.now();
+    try {
+      await settingsRepository.save({
+        trainCutoverTimestamp: now,
+      });
+      setCutoverTs(now);
+      setSaveMessage('Migration cutover timestamp set to current time. Legacy individual breadcrumbs before this timestamp will be filtered out.');
+      setTimeout(() => setSaveMessage(null), 4000);
+    } catch (err) {
+      console.warn('Failed to save cutover timestamp:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="bg-[#2D2424] border border-[#3A2E2E] rounded-xl p-6 space-y-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#3A2E2E] pb-4">
@@ -48,18 +69,29 @@ export default function TelemetryTrainConfigCard() {
           </p>
         </div>
 
-        <button
-          onClick={handleToggleTelemetry}
-          disabled={isSaving}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-            telemetryEnabled
-              ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-600/30'
-              : 'bg-rose-600/20 text-rose-400 border border-rose-500/40 hover:bg-rose-600/30'
-          }`}
-        >
-          <Power size={14} />
-          {telemetryEnabled ? 'STATUS: ENABLED (1-WRITE BUNDLING)' : 'KILL-SWITCH: TELEMETRY DISABLED'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleSetCutoverNow}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-all"
+            title="Set migration cutover timestamp to now to filter out older legacy individual breadcrumbs"
+          >
+            {cutoverTs ? `Cutover: ${new Date(cutoverTs).toLocaleTimeString()}` : 'Set Migration Cutover (Now)'}
+          </button>
+
+          <button
+            onClick={handleToggleTelemetry}
+            disabled={isSaving}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              telemetryEnabled
+                ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-600/30'
+                : 'bg-rose-600/20 text-rose-400 border border-rose-500/40 hover:bg-rose-600/30'
+            }`}
+          >
+            <Power size={14} />
+            {telemetryEnabled ? 'STATUS: ENABLED (1-WRITE BUNDLING)' : 'KILL-SWITCH: TELEMETRY DISABLED'}
+          </button>
+        </div>
       </div>
 
       {saveMessage && (

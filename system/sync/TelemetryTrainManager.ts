@@ -237,6 +237,14 @@ export class TelemetryTrainManager {
         const sizeBytes = new Blob([jsonStr]).size;
         this.metrics.lastTrainSizeKB = Math.round(sizeBytes / 1024);
 
+        // Gap 9: Pre-write size check - ensure document never exceeds 800KB safety threshold
+        if (sizeBytes > 800 * 1024 && trainDoc.pings.length > 50) {
+          console.warn(`[500KB Safety Valve] Train size (${this.metrics.lastTrainSizeKB}KB) exceeded safe threshold. Halving batch slice before write.`);
+          const half = Math.floor(trainDoc.pings.length / 2);
+          trainDoc.pings = trainDoc.pings.slice(0, half);
+          trainDoc.count = trainDoc.pings.length;
+        }
+
         const success = await saveTelemetryTrainToFirestore(trainDoc);
         if (success) {
           totalSentInBatch += chunk.length;

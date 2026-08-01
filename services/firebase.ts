@@ -9,6 +9,7 @@ import {
   onSnapshot, 
   getDocs,
   query,
+  where,
   orderBy,
   disableNetwork
 } from 'firebase/firestore';
@@ -81,6 +82,17 @@ export function handleFirestoreError(context: string, err: any) {
   }
 }
 
+// Debounce helper for snapshot callbacks (Gap 8)
+function debounceSnapshot<T>(fn: (data: T) => void, delayMs: number = 250): (data: T) => void {
+  let timer: any = null;
+  return (data: T) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn(data);
+    }, delayMs);
+  };
+}
+
 // --- APP SETTINGS ---
 export interface AppSettings {
   leadSources: string[];
@@ -138,9 +150,10 @@ export function subscribePhotos(onUpdate: (photos: Photo[]) => void) {
   try {
     const q = query(collection(db, PHOTOS_COL));
     let unsub: (() => void) | null = null;
+    const debouncedNotify = debounceSnapshot(onUpdate, 250);
     unsub = onSnapshot(q, (snapshot) => {
       const photos: Photo[] = snapshot.docs.map(doc => doc.data() as Photo);
-      onUpdate(photos);
+      debouncedNotify(photos);
     }, (err) => {
       handleFirestoreError('Listening to photos', err);
       if (unsub) unsub();
@@ -177,9 +190,10 @@ export function subscribeTeamMembers(onUpdate: (members: User[]) => void) {
   try {
     const q = query(collection(db, TEAM_COL));
     let unsub: (() => void) | null = null;
+    const debouncedNotify = debounceSnapshot(onUpdate, 250);
     unsub = onSnapshot(q, (snapshot) => {
       const members: User[] = snapshot.docs.map(doc => doc.data() as User);
-      onUpdate(members);
+      debouncedNotify(members);
     }, (err) => {
       handleFirestoreError('Listening to team members', err);
       if (unsub) unsub();
@@ -207,9 +221,10 @@ export function subscribeFollowUps(onUpdate: (followUps: FollowUp[]) => void) {
   try {
     const q = query(collection(db, FOLLOWUPS_COL));
     let unsub: (() => void) | null = null;
+    const debouncedNotify = debounceSnapshot(onUpdate, 250);
     unsub = onSnapshot(q, (snapshot) => {
       const followUps: FollowUp[] = snapshot.docs.map(doc => doc.data() as FollowUp);
-      onUpdate(followUps);
+      debouncedNotify(followUps);
     }, (err) => {
       handleFirestoreError('Listening to followups', err);
       if (unsub) unsub();
@@ -237,9 +252,10 @@ export function subscribeRecycleBin(onUpdate: (items: RecycleItem[]) => void) {
   try {
     const q = query(collection(db, RECYCLE_COL));
     let unsub: (() => void) | null = null;
+    const debouncedNotify = debounceSnapshot(onUpdate, 250);
     unsub = onSnapshot(q, (snapshot) => {
       const items: RecycleItem[] = snapshot.docs.map(doc => doc.data() as RecycleItem);
-      onUpdate(items);
+      debouncedNotify(items);
     }, (err) => {
       handleFirestoreError('Listening to recycle bin', err);
       if (unsub) unsub();
@@ -270,7 +286,23 @@ export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void
   const fetchAndNotify = async () => {
     if (!isSubscribed || isQuotaExceeded || (typeof document !== 'undefined' && document.hidden)) return;
     try {
-      const snap = await getDocs(collection(db, BREADCRUMBS_COL));
+      // Gap 6: Read cutover timestamp gate from global config
+      let trainCutoverTimestamp = 0;
+      try {
+        const configSnap = await getDoc(doc(db, SETTINGS_COL, 'global_config'));
+        if (configSnap.exists()) {
+          trainCutoverTimestamp = configSnap.data()?.trainCutoverTimestamp || 0;
+        }
+      } catch (e) {
+        // non-blocking
+      }
+
+      // Gap 2: Query filter for telemetry_train docs only
+      const trainQuery = query(
+        collection(db, BREADCRUMBS_COL),
+        where('type', '==', 'telemetry_train')
+      );
+      const snap = await getDocs(trainQuery);
       const allCrumbs: any[] = [];
       const now = Date.now();
       const twoDaysAgo = now - 48 * 60 * 60 * 1000;
@@ -281,20 +313,37 @@ export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void
           // Train document: unpack pings within recent window
           if (!data.fromTs || data.fromTs >= twoDaysAgo || (now - (data.toTs || 0) < 48 * 3600000)) {
             data.pings.forEach((p: any) => {
-              allCrumbs.push({
-                ...p,
-                batchId: data.batchId,
-                type: 'telemetry_ping',
-                userId: p.userId || data.userId,
-                userName: p.userName || data.userName,
-              });
+              const pingTs = (p.timestamp && !isNaN(new Date(p.timestamp).getTime())) ? new Date(p.timestamp).getTime() : 0;
+              // Gap 6: Only include train pings at or after cutover timestamp (or if no cutover set)
+              if (!trainCutoverTimestamp || trainCutoverTimestamp === 0 || pingTs >= trainCutoverTimestamp) {
+                allCrumbs.push({
+                  ...p,
+                  batchId: data.batchId,
+                  type: 'telemetry_ping',
+                  userId: p.userId || data.userId,
+                  userName: p.userName || data.userName,
+                });
+              }
             });
           }
-        } else if (data && data.lat !== undefined && data.lng !== undefined) {
-          // Legacy individual breadcrumb doc
-          allCrumbs.push(data);
         }
       });
+
+      // Gap 6: Only include legacy individual docs BEFORE the cutover timestamp
+      try {
+        const legacySnap = await getDocs(collection(db, BREADCRUMBS_COL));
+        legacySnap.docs.forEach(d => {
+          const data = d.data();
+          if (data && data.type !== 'telemetry_train' && data.lat !== undefined && data.lng !== undefined) {
+            const docTs = (data.timestamp && !isNaN(new Date(data.timestamp).getTime())) ? new Date(data.timestamp).getTime() : 0;
+            if (!trainCutoverTimestamp || trainCutoverTimestamp === 0 || docTs < trainCutoverTimestamp) {
+              allCrumbs.push(data);
+            }
+          }
+        });
+      } catch (e) {
+        // non-blocking legacy fetch
+      }
 
       if (isSubscribed) {
         onUpdate(allCrumbs);
