@@ -14,7 +14,7 @@ import {
   disableNetwork
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { Photo, User, FollowUp, RecycleItem } from '../types';
+import { Photo, User, FollowUp, RecycleItem, AppSettings } from '../types';
 
 // Initialize Firebase App
 const app = initializeApp({
@@ -94,16 +94,6 @@ function debounceSnapshot<T>(fn: (data: T) => void, delayMs: number = 250): (dat
 }
 
 // --- APP SETTINGS ---
-export interface AppSettings {
-  leadSources: string[];
-  personTypes: string[];
-  constructionStages: string[];
-  telemetryEnabled?: boolean;
-  trainDispatchIntervalMs?: number;
-  heartbeatIntervalMs?: number;
-  trainCutoverTimestamp?: number;
-  isSeeded?: boolean;
-}
 
 export function subscribeAppSettings(onUpdate: (settings: AppSettings) => void) {
   if (isQuotaExceeded) return () => {};

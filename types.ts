@@ -1,9 +1,19 @@
-
 export type Role = 'admin' | 'staff';
 
 export const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%232D2424' stroke='%23D99026' stroke-width='1.5'><path d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'/><circle cx='12' cy='7' r='4'/></svg>";
 
 export type View = 'dashboard' | 'upload' | 'gallery' | 'pending' | 'admin' | 'profile' | 'followups' | 'odometer' | 'route_tracker' | 'analytics' | 'escalations';
+
+export interface AppSettings {
+  leadSources: string[];
+  personTypes: string[];
+  constructionStages: string[];
+  telemetryEnabled?: boolean;
+  trainDispatchIntervalMs?: number;
+  heartbeatIntervalMs?: number;
+  trainCutoverTimestamp?: number;
+  isSeeded?: boolean;
+}
 
 export interface LeadEscalationItem {
   id: string;
@@ -274,6 +284,7 @@ export const MATERIAL_INTERESTS = [
 
 export interface RouteBreadcrumb {
   id?: string;
+  batchId?: string;
   lat: number;
   lng: number;
   accuracy?: number;
@@ -325,9 +336,8 @@ export interface TelemetryTrainDoc {
   toTs: number;
   count: number;
   pings: RouteBreadcrumb[];
-  geofenceEvents?: GeofenceEvent[];
+  geofenceEvents?: any[];
   presence?: TelemetryPresence;
   dispatchReason: 'timer' | 'priority_event' | 'manual' | 'unload' | 'size_overflow';
   createdAt: string;
 }
-

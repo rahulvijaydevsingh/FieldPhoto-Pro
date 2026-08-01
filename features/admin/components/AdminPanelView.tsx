@@ -13,6 +13,7 @@ import BufferInspector from './BufferInspector';
 import OfflineSyncInspector from './OfflineSyncInspector';
 import GeofencesManager from './GeofencesManager';
 import TelemetryTrainConfigCard from './TelemetryTrainConfigCard';
+import { LegacyDataSweeper } from './LegacyDataSweeper';
 import AttendanceView from '../../../components/AttendanceView';
 import AnalyticsDashboardView from '../../analytics/components/AnalyticsDashboardView';
 import LeadEscalationView from '../../escalations/components/LeadEscalationView';
@@ -351,6 +352,15 @@ export default function AdminPanelView({
 
           {/* Post-Processing Ingestion Handler Chain Pipeline Inspector */}
           <PipelineInspector currentUser={DEMO_ADMIN} />
+
+          {/* Database Maintenance / System Optimization */}
+          <div className="space-y-4 mt-6">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <Database size={20} className="text-[#D99026]" />
+              Database Maintenance & Optimization
+            </h3>
+            <LegacyDataSweeper />
+          </div>
         </div>
       )}
 
@@ -398,4 +408,3 @@ export default function AdminPanelView({
     </div>
   );
 }
-
