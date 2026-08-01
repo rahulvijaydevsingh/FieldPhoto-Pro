@@ -1,36 +1,11 @@
-/**
- * Unified Client-Side Offline-First Sync Engine
- * FieldPhoto-Pro Core Architecture
- * 
- * Inspired by Traccar Client Mobile App Architecture.
- * Buffers both Photos & Staff Location Telemetry locally when offline or under low connectivity.
- * Automatically flushes queues in batch when online network is detected.
- * 
- * ANDROID NATIVE ARCHITECTURE BLUEPRINT:
- * ------------------------------------------------
- * When converting into a Native Android App (Kotlin/Java):
- * 1. Room SQLite Database DAOs:
- *    `@Dao interface PendingPhotoDao` and `@Dao interface PendingBreadcrumbDao`
- * 
- * 2. Background WorkManager Execution:
- *    ```kotlin
- *    val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
- *    
- *    val photoWorker = OneTimeWorkRequestBuilder<PhotoSyncWorker>().setConstraints(constraints).build()
- *    val locationWorker = PeriodicWorkRequestBuilder<LocationTrackingSyncWorker>(15, TimeUnit.MINUTES).setConstraints(constraints).build()
- *    ```
- */
-
-import { PendingPhotoItem, PendingBreadcrumbItem, OfflineSyncEngineStats } from './types';
+import { PendingPhotoItem, OfflineSyncEngineStats } from './types';
 import { isFirestoreQuotaExceeded, subscribeAppSettings } from '../../services/firebase';
 import { TelemetryTrainManager } from './TelemetryTrainManager';
 
 export class OfflineSyncEngine {
   private isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
   private pendingPhotos: PendingPhotoItem[] = [];
-  private pendingBreadcrumbs: PendingBreadcrumbItem[] = [];
   private totalPhotosSynced: number = 0;
-  private totalBreadcrumbsSynced: number = 0;
   private lastSyncTime?: string;
   private syncTimer: any = null;
   private autoSyncIntervalMs: number = 300000;
@@ -38,27 +13,21 @@ export class OfflineSyncEngine {
   constructor() {
     this.initStorage();
     this.bindNetworkListeners();
-    this.startAutoSyncWorker(300000); // Batch flush every 5 minutes
+    this.startAutoSyncWorker(300000);
     try {
       subscribeAppSettings((settings) => {
         if (settings?.trainDispatchIntervalMs && settings.trainDispatchIntervalMs >= 30000) {
           this.startAutoSyncWorker(settings.trainDispatchIntervalMs);
         }
       });
-    } catch (e) {
-      // non-blocking
-    }
+    } catch (e) {}
   }
 
   private initStorage(): void {
     if (typeof window === 'undefined') return;
-
     try {
       const photosStr = localStorage.getItem('fpro_pending_photos_queue');
       if (photosStr) this.pendingPhotos = JSON.parse(photosStr);
-
-      const breadcrumbsStr = localStorage.getItem('fpro_pending_breadcrumbs_queue');
-      if (breadcrumbsStr) this.pendingBreadcrumbs = JSON.parse(breadcrumbsStr);
     } catch (err) {
       console.warn('OfflineSyncEngine storage load error:', err);
     }
@@ -66,10 +35,8 @@ export class OfflineSyncEngine {
 
   private saveStorage(): void {
     if (typeof window === 'undefined') return;
-
     try {
       localStorage.setItem('fpro_pending_photos_queue', JSON.stringify(this.pendingPhotos));
-      localStorage.setItem('fpro_pending_breadcrumbs_queue', JSON.stringify(this.pendingBreadcrumbs));
       window.dispatchEvent(new Event('fieldops_sync'));
     } catch (err) {
       console.warn('OfflineSyncEngine storage save error:', err);
@@ -89,9 +56,6 @@ export class OfflineSyncEngine {
     });
   }
 
-  /**
-   * Enqueues a captured photo into the local offline queue if offline or network fail
-   */
   public enqueuePhoto(item: Omit<PendingPhotoItem, 'id' | 'syncStatus' | 'retryCount'>): PendingPhotoItem {
     const photoItem: PendingPhotoItem = {
       ...item,
@@ -110,64 +74,15 @@ export class OfflineSyncEngine {
     return photoItem;
   }
 
-  /**
-   * Enqueues a staff GPS location breadcrumb into local telemetry queue
-   */
-  public enqueueBreadcrumb(item: Omit<PendingBreadcrumbItem, 'id' | 'syncStatus' | 'retryCount'>): PendingBreadcrumbItem {
-    const breadcrumbItem: PendingBreadcrumbItem = {
-      ...item,
-      id: 'pending_bc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      syncStatus: 'PENDING',
-      retryCount: 0,
-    };
-
-    this.pendingBreadcrumbs.push(breadcrumbItem);
-    this.saveStorage();
-
-    return breadcrumbItem;
-  }
-
-  /**
-   * Triggers background sync worker to batch-upload pending photos and location telemetry
-   */
   public async triggerBatchSync(): Promise<{ photosFlushed: number; breadcrumbsFlushed: number }> {
     if (!this.isOnline || isFirestoreQuotaExceeded()) {
       return { photosFlushed: 0, breadcrumbsFlushed: 0 };
     }
 
     let photosFlushed = 0;
-    let breadcrumbsFlushed = 0;
 
-    // 1. Flush Staff Telemetry Breadcrumbs via Bundled Telemetry Train (Single Write)
-    try {
-      if (this.pendingBreadcrumbs.length > 0) {
-        const itemsToSync = [...this.pendingBreadcrumbs];
-        for (const bc of itemsToSync) {
-          TelemetryTrainManager.getInstance().enqueuePing({
-            lat: bc.lat,
-            lng: bc.lng,
-            accuracy: bc.accuracy,
-            speed: bc.speed,
-            plusCode: bc.plusCode,
-            timestamp: bc.timestamp,
-            deviceInfo: bc.deviceInfo,
-            userId: bc.userId,
-            userName: bc.userName,
-          });
-        }
-      }
-
-      // Dispatch single bundled write to Firestore
-      const trainSuccess = await TelemetryTrainManager.getInstance().dispatchTrain('timer');
-      if (trainSuccess && this.pendingBreadcrumbs.length > 0) {
-        breadcrumbsFlushed = this.pendingBreadcrumbs.length;
-        this.totalBreadcrumbsSynced += breadcrumbsFlushed;
-        this.pendingBreadcrumbs = [];
-        this.saveStorage();
-      }
-    } catch (err) {
-      console.warn('Breadcrumb sync train batch error:', err);
-    }
+    // 1. Trigger Telemetry Train Dispatch via TelemetryTrainManager
+    await TelemetryTrainManager.getInstance().dispatchTrain('timer');
 
     // 2. Flush Pending Photo Items
     if (this.pendingPhotos.length > 0) {
@@ -179,7 +94,6 @@ export class OfflineSyncEngine {
 
       for (const photoItem of itemsToSync) {
         try {
-          // Simulate network upload
           await new Promise((resolve) => setTimeout(resolve, 300));
           photosFlushed++;
           this.totalPhotosSynced++;
@@ -195,14 +109,14 @@ export class OfflineSyncEngine {
     this.lastSyncTime = new Date().toISOString();
     this.saveStorage();
 
-    return { photosFlushed, breadcrumbsFlushed };
+    return { photosFlushed, breadcrumbsFlushed: 0 };
   }
 
   public startAutoSyncWorker(intervalMs: number = 300000): void {
     if (this.syncTimer) clearInterval(this.syncTimer);
     this.autoSyncIntervalMs = intervalMs;
     this.syncTimer = setInterval(() => {
-      if (this.isOnline && (this.pendingPhotos.length > 0 || this.pendingBreadcrumbs.length > 0)) {
+      if (this.isOnline) {
         this.triggerBatchSync();
       }
     }, intervalMs);
@@ -217,7 +131,6 @@ export class OfflineSyncEngine {
 
   public clearAllQueues(): void {
     this.pendingPhotos = [];
-    this.pendingBreadcrumbs = [];
     this.saveStorage();
   }
 
@@ -226,23 +139,18 @@ export class OfflineSyncEngine {
       isOnline: this.isOnline,
       pendingPhotosCount: this.pendingPhotos.filter((p) => p.syncStatus === 'PENDING').length,
       syncingPhotosCount: this.pendingPhotos.filter((p) => p.syncStatus === 'SYNCING').length,
-      pendingBreadcrumbsCount: this.pendingBreadcrumbs.filter((b) => b.syncStatus === 'PENDING').length,
-      syncingBreadcrumbsCount: this.pendingBreadcrumbs.filter((b) => b.syncStatus === 'SYNCING').length,
+      pendingBreadcrumbsCount: 0,
+      syncingBreadcrumbsCount: 0,
       totalPhotosSynced: this.totalPhotosSynced,
-      totalBreadcrumbsSynced: this.totalBreadcrumbsSynced,
+      totalBreadcrumbsSynced: TelemetryTrainManager.getInstance().getMetrics().totalPingsSent,
       lastSyncTime: this.lastSyncTime,
-      autoSyncIntervalMs: this.autoSyncIntervalMs,
+      autoSyncIntervalMs: this.autoSyncIntervalMs, // Dynamic runtime value
     };
   }
 
   public getPendingPhotos(): PendingPhotoItem[] {
     return [...this.pendingPhotos];
   }
-
-  public getPendingBreadcrumbs(): PendingBreadcrumbItem[] {
-    return [...this.pendingBreadcrumbs];
-  }
 }
 
-// Global offline sync engine singleton instance
 export const offlineSyncEngine = new OfflineSyncEngine();

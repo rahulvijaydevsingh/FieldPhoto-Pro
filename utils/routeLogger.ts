@@ -11,40 +11,7 @@ import {
   detectGeofenceTransitions, 
   writeGeofenceEventToFirestore 
 } from '../services/geofence';
-
-export interface RouteBreadcrumb {
-  id?: string;
-  batchId?: string;
-  lat: number;
-  lng: number;
-  accuracy?: number;
-  timestamp: string; // ISO string
-  plusCode?: string;
-  speed?: number | null;
-  altitude?: number | null;
-  heading?: number | null;
-  deviceInfo?: string;
-  deviceId?: string;
-  osVersion?: string;
-  deviceModel?: string;
-  batteryLevel?: number;
-  networkType?: string;
-  userId?: string;
-  userName?: string;
-  geofenceIds?: string[];
-  
-  // Forensic tracking attributes
-  sourceEvent?: 'APP_LOAD' | 'PHOTO_UPLOAD' | 'ATTENDANCE_CHECK' | 'HEARTBEAT' | 'MANUAL' | 'ROUTE_TRACKER' | 'ODOMETER_ENTRY';
-  photoUploadSource?: 'DIRECT_CAPTURE' | 'GALLERY';
-  locationProvider?: 'GPS_HARDWARE' | 'WIFI_GOOGLE' | 'CELL_TOWER' | 'EXIF_FALLBACK';
-  isMocked?: boolean;
-  exifDateTimeOriginal?: string;
-  exifCameraMake?: string;
-  exifCameraModel?: string;
-  photoId?: string;
-  attendanceId?: string;
-  flags?: string[];
-}
+import { RouteBreadcrumb } from '../types';
 
 const ROUTE_PREFIX = 'fieldops_route_log_';
 const SHARED_ROUTE_KEY = 'fieldops_shared_breadcrumbs';
@@ -125,7 +92,7 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
     const trimmed = route.slice(-500);
     localStorage.setItem(key, JSON.stringify(trimmed));
 
-    // Update local device cache & enqueue breadcrumb into 5-minute batch flusher
+    // Update local device cache & enqueue breadcrumb into 5-minute flusher
     try {
       const sharedStr = localStorage.getItem(SHARED_ROUTE_KEY);
       const sharedRoute: RouteBreadcrumb[] = sharedStr ? JSON.parse(sharedStr) : [];

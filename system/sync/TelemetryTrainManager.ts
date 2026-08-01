@@ -21,6 +21,7 @@ export class TelemetryTrainManager {
   private sessionPart: number = 1;
   private isDispatching: boolean = false;
   private telemetryEnabled: boolean = true;
+  private saveDebounceTimer: any = null;
 
   public setTelemetryEnabled(enabled: boolean): void {
     this.telemetryEnabled = enabled;
@@ -58,13 +59,11 @@ export class TelemetryTrainManager {
     if (typeof window === 'undefined') return;
     try {
       const pingsStr = localStorage.getItem('fpro_telemetry_train_queue');
-      if (pingsStr) {
-        this.pingsQueue = JSON.parse(pingsStr);
-      }
+      if (pingsStr) this.pingsQueue = JSON.parse(pingsStr);
+
       const gfStr = localStorage.getItem('fpro_telemetry_train_geofences');
-      if (gfStr) {
-        this.geofencesQueue = JSON.parse(gfStr);
-      }
+      if (gfStr) this.geofencesQueue = JSON.parse(gfStr);
+
       const metricsStr = localStorage.getItem('fpro_telemetry_train_metrics');
       if (metricsStr) {
         const stored = JSON.parse(metricsStr);
@@ -76,33 +75,39 @@ export class TelemetryTrainManager {
     }
   }
 
-  private saveStorage(): void {
+  // Debounced LocalStorage Persistence for UI thread optimization
+  private saveStorage(immediate: boolean = false): void {
     if (typeof window === 'undefined') return;
-    try {
-      // Gap 4: Limit offline local queue to 500 items max (FIFO) to avoid QuotaExceededError
-      if (this.pingsQueue.length > 500) {
-        this.pingsQueue = this.pingsQueue.slice(-500);
-      }
-      if (this.geofencesQueue.length > 200) {
-        this.geofencesQueue = this.geofencesQueue.slice(-200);
-      }
-      localStorage.setItem('fpro_telemetry_train_queue', JSON.stringify(this.pingsQueue));
-      localStorage.setItem('fpro_telemetry_train_geofences', JSON.stringify(this.geofencesQueue));
-      this.metrics.pingsBuffered = this.pingsQueue.length;
-      localStorage.setItem('fpro_telemetry_train_metrics', JSON.stringify(this.metrics));
-    } catch (err: any) {
-      console.warn('TelemetryTrainManager saveStorage error:', err);
-      // Graceful QuotaExceeded recovery: evict oldest 25% and retry once
-      if (err?.name === 'QuotaExceededError' || err?.message?.includes('quota')) {
-        try {
+
+    const performSave = () => {
+      try {
+        if (this.pingsQueue.length > 500) {
+          this.pingsQueue = this.pingsQueue.slice(-500);
+        }
+        if (this.geofencesQueue.length > 200) {
+          this.geofencesQueue = this.geofencesQueue.slice(-200);
+        }
+        localStorage.setItem('fpro_telemetry_train_queue', JSON.stringify(this.pingsQueue));
+        localStorage.setItem('fpro_telemetry_train_geofences', JSON.stringify(this.geofencesQueue));
+        this.metrics.pingsBuffered = this.pingsQueue.length;
+        localStorage.setItem('fpro_telemetry_train_metrics', JSON.stringify(this.metrics));
+      } catch (err: any) {
+        if (err?.name === 'QuotaExceededError' || err?.message?.includes('quota')) {
           const evictCount = Math.max(1, Math.floor(this.pingsQueue.length * 0.25));
           this.pingsQueue = this.pingsQueue.slice(evictCount);
+          this.geofencesQueue = this.geofencesQueue.slice(Math.max(1, Math.floor(this.geofencesQueue.length * 0.25)));
           localStorage.setItem('fpro_telemetry_train_queue', JSON.stringify(this.pingsQueue));
           localStorage.setItem('fpro_telemetry_train_geofences', JSON.stringify(this.geofencesQueue));
-        } catch (retryErr) {
-          console.warn('TelemetryTrainManager saveStorage retry failed:', retryErr);
         }
       }
+    };
+
+    if (immediate || this.pingsQueue.length >= 20) {
+      if (this.saveDebounceTimer) clearTimeout(this.saveDebounceTimer);
+      performSave();
+    } else {
+      if (this.saveDebounceTimer) clearTimeout(this.saveDebounceTimer);
+      this.saveDebounceTimer = setTimeout(performSave, 500);
     }
   }
 
@@ -116,33 +121,28 @@ export class TelemetryTrainManager {
     window.addEventListener('beforeunload', handleUnloadOrHide);
     window.addEventListener('pagehide', handleUnloadOrHide);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        handleUnloadOrHide();
-      }
+      if (document.visibilityState === 'hidden') handleUnloadOrHide();
     });
   }
 
   public enqueuePing(ping: RouteBreadcrumb): void {
     if (!this.telemetryEnabled) return;
-    // Add sequence index / deduplication key
     const ts = ping.timestamp ? new Date(ping.timestamp).getTime() : Date.now();
-    const seq = this.pingsQueue.length;
     const enriched: RouteBreadcrumb = {
       ...ping,
-      id: ping.id || `p_${ts}_${seq}`,
+      id: ping.id || `p_${ts}_${this.pingsQueue.length}`,
       timestamp: new Date(ts).toISOString(),
     };
 
-    // Prevent duplicate re-enqueuing of identical timestamp + coordinates
     const exists = this.pingsQueue.some(
       p => p.timestamp === enriched.timestamp && p.lat === enriched.lat && p.lng === enriched.lng
     );
+
     if (!exists) {
       this.pingsQueue.push(enriched);
-      this.saveStorage();
+      this.saveStorage(false);
       window.dispatchEvent(new Event('telemetry_train_updated'));
 
-      // Phase 10: Automatic safety overflow dispatch if queue exceeds 300 items (~500 KB limit)
       if (this.pingsQueue.length >= 300) {
         this.dispatchTrain('size_overflow').catch(() => {});
       }
@@ -154,10 +154,11 @@ export class TelemetryTrainManager {
     const exists = this.geofencesQueue.some(g => g.id === ev.id);
     if (!exists) {
       this.geofencesQueue.push(ev);
-      this.saveStorage();
+      if (this.geofencesQueue.length > 200) {
+        this.geofencesQueue = this.geofencesQueue.slice(-200);
+      }
+      this.saveStorage(true);
       window.dispatchEvent(new Event('telemetry_train_updated'));
-
-      // Gap 1: Priority geofence events trigger an immediate train dispatch
       this.dispatchTrain('priority_event').catch(() => {});
     }
   }
@@ -173,12 +174,8 @@ export class TelemetryTrainManager {
   ): Promise<boolean> {
     if (this.isDispatching) return false;
     if (!this.telemetryEnabled && reason !== 'manual') return false;
-    if (this.pingsQueue.length === 0 && this.geofencesQueue.length === 0 && !this.presence) {
-      return true;
-    }
-    if (isFirestoreQuotaExceeded()) {
-      return false;
-    }
+    if (this.pingsQueue.length === 0 && this.geofencesQueue.length === 0 && !this.presence) return true;
+    if (isFirestoreQuotaExceeded()) return false;
 
     this.isDispatching = true;
     try {
@@ -186,23 +183,15 @@ export class TelemetryTrainManager {
       const geofencesToSend = [...this.geofencesQueue];
       const presenceToSend = this.presence ? { ...this.presence } : undefined;
 
-      if (pingsToSend.length === 0 && !presenceToSend && geofencesToSend.length === 0) {
-        this.isDispatching = false;
-        return true;
-      }
-
       const firstPing = pingsToSend[0];
       const userId = firstPing?.userId || presenceToSend?.userId || 'staff_u1';
       const userName = firstPing?.userName || presenceToSend?.userName || 'Field Staff';
 
-      const timestamps = pingsToSend
-        .map(p => new Date(p.timestamp).getTime())
-        .filter(t => !isNaN(t));
+      const timestamps = pingsToSend.map(p => new Date(p.timestamp).getTime()).filter(t => !isNaN(t));
       const fromTs = timestamps.length > 0 ? Math.min(...timestamps) : Date.now();
       const toTs = timestamps.length > 0 ? Math.max(...timestamps) : Date.now();
 
-      // Check 1MB safety valve (800KB threshold)
-      const maxChunkSize = 350; // max pings per doc to stay safely under 1MB
+      const maxChunkSize = 350;
       const chunks: RouteBreadcrumb[][] = [];
       if (pingsToSend.length <= maxChunkSize) {
         chunks.push(pingsToSend);
@@ -236,23 +225,19 @@ export class TelemetryTrainManager {
           createdAt: new Date().toISOString(),
         };
 
-        const jsonStr = JSON.stringify(trainDoc);
-        const sizeBytes = new Blob([jsonStr]).size;
-        this.metrics.lastTrainSizeKB = Math.round(sizeBytes / 1024);
-
-        // Gap 9: Pre-write size check - ensure document never exceeds 800KB safety threshold
-        while (new Blob([JSON.stringify(trainDoc)]).size > 800 * 1024 && trainDoc.pings.length > 50) {
+        // Iterative 800 KB Safety Guard Loop
+        while (new Blob([JSON.stringify(trainDoc)]).size > 800 * 1024 && trainDoc.pings.length > 10) {
           const half = Math.floor(trainDoc.pings.length / 2);
           trainDoc.pings = trainDoc.pings.slice(0, half);
           trainDoc.count = trainDoc.pings.length;
         }
 
-        const finalSizeBytes = new Blob([JSON.stringify(trainDoc)]).size;
-        this.metrics.lastTrainSizeKB = Math.round(finalSizeBytes / 1024);
+        const sizeBytes = new Blob([JSON.stringify(trainDoc)]).size;
+        this.metrics.lastTrainSizeKB = Math.round(sizeBytes / 1024);
 
         const success = await saveTelemetryTrainToFirestore(trainDoc);
         if (success) {
-          totalSentInBatch += chunk.length;
+          totalSentInBatch += trainDoc.pings.length;
           this.metrics.trainWritesSent++;
           this.metrics.partCount = this.sessionPart;
         } else {
@@ -262,7 +247,6 @@ export class TelemetryTrainManager {
       }
 
       if (allSucceeded) {
-        // Clear successfully sent queues
         this.pingsQueue = [];
         this.geofencesQueue = [];
         this.metrics.totalPingsSent += totalSentInBatch;
@@ -274,7 +258,7 @@ export class TelemetryTrainManager {
             this.metrics.totalPingsSent / this.metrics.trainWritesSent
           );
         }
-        this.saveStorage();
+        this.saveStorage(true);
         window.dispatchEvent(new Event('telemetry_train_synced'));
         this.isDispatching = false;
         return true;
@@ -296,6 +280,6 @@ export class TelemetryTrainManager {
   public clearQueue(): void {
     this.pingsQueue = [];
     this.geofencesQueue = [];
-    this.saveStorage();
+    this.saveStorage(true);
   }
 }
