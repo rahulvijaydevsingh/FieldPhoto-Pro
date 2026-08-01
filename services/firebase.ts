@@ -102,6 +102,7 @@ export interface AppSettings {
   trainDispatchIntervalMs?: number;
   heartbeatIntervalMs?: number;
   trainCutoverTimestamp?: number;
+  isSeeded?: boolean;
 }
 
 export function subscribeAppSettings(onUpdate: (settings: AppSettings) => void) {
