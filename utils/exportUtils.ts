@@ -93,7 +93,8 @@ export const exportPhotosToExcel = (photos: Photo[], filenamePrefix = 'FieldTrac
       ? p.customLeadSource 
       : (p.leadSource || 'Field Visit');
 
-    const statusStr = p.status === 'in-progress' ? 'In Progress' 
+    const statusStr = p.status === 'completed' ? 'Completed' 
+      : p.status === 'in-progress' ? 'In Progress' 
       : p.status === 'new' ? 'New Lead'
       : p.status === 'quoted' ? 'Quoted'
       : p.status === 'won' ? 'Won'

@@ -5,7 +5,6 @@ import { collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, limit, 
 import { db, handleFirestoreError, isFirestoreQuotaExceeded } from './firebase';
 import { Geofence, GeofenceEvent } from '../types';
 import { haversineMeters, distanceToLineMeters, latitudeDeltaForMeters, longitudeDeltaForMeters } from '../utils/distance';
-import { TelemetryTrainManager } from '../system/sync/TelemetryTrainManager';
 
 // ─── 1. CIRCLE SHAPE ───
 export class GeofenceCircleShape {
@@ -368,11 +367,16 @@ export async function writeGeofenceEventToFirestore(event: Omit<GeofenceEvent, '
   localEvents.unshift(fullEvent);
   localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(localEvents.slice(0, 100)));
 
-  // Phase 6a: Fold geofence events into TelemetryTrainManager buffer instead of individual setDoc write!
-  try {
-    TelemetryTrainManager.getInstance().enqueueGeofenceEvent(fullEvent);
-  } catch (err) {
-    console.warn('enqueueGeofenceEvent error:', err);
+  // Persist geofence enter/exit event to Firestore
+  if (!isFirestoreQuotaExceeded()) {
+    try {
+      await setDoc(doc(db, GEOFENCE_EVENTS_COLLECTION, fullEvent.id), {
+        ...fullEvent,
+        timestamp: serverTimestamp()
+      }, { merge: true });
+    } catch (err) {
+      handleFirestoreError('writeGeofenceEventToFirestore', err);
+    }
   }
 
   return fullEvent;

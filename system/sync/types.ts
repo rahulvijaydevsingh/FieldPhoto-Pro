@@ -27,6 +27,21 @@ export interface PendingPhotoItem {
   lastError?: string;
 }
 
+export interface PendingBreadcrumbItem {
+  id: string;
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  speed?: number | null;
+  plusCode?: string;
+  timestamp: string;
+  deviceInfo?: string;
+  userId: string;
+  userName: string;
+  syncStatus: 'PENDING' | 'SYNCING' | 'FAILED';
+  retryCount: number;
+}
+
 export interface OfflineSyncEngineStats {
   isOnline: boolean;
   pendingPhotosCount: number;

@@ -11,10 +11,11 @@ import {
   query,
   where,
   orderBy,
-  disableNetwork
+  disableNetwork,
+  enableNetwork
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import { Photo, User, FollowUp, RecycleItem, AppSettings } from '../types';
+import { Photo, User, FollowUp, RecycleItem } from '../types';
 
 // Initialize Firebase App
 const app = initializeApp({
@@ -38,20 +39,75 @@ const SETTINGS_COL = 'app_settings';
 const BREADCRUMBS_COL = 'route_breadcrumbs';
 const ODOMETER_COL = 'odometer_readings';
 
-// Helper to handle Firestore quota or connection errors gracefully
-let isQuotaExceeded = typeof window !== 'undefined' && (
-  sessionStorage.getItem('fieldops_firestore_quota_exceeded') === 'true' ||
-  localStorage.getItem('fieldops_firestore_quota_exceeded') === 'true'
-);
+// Helper to handle Firestore quota or connection errors gracefully with Exponential Backoff & Rate Limiter
+let quotaExceededUntil = 0;
+let backoffDurationSeconds = 60; // Start at 60s, double on repeat hits up to 15m
+let writesInLastMinute = 0;
+let lastMinuteTimestamp = Date.now();
+const MAX_WRITES_PER_MINUTE = 60; // Safe threshold to prevent burst spikes
 
-if (isQuotaExceeded) {
-  try {
-    disableNetwork(db).catch(() => {});
-  } catch {}
+if (typeof window !== 'undefined') {
+  const savedUntil = localStorage.getItem('fieldops_firestore_quota_until');
+  if (savedUntil) {
+    const untilTs = parseInt(savedUntil, 10);
+    if (!isNaN(untilTs) && untilTs > Date.now()) {
+      quotaExceededUntil = untilTs;
+    } else {
+      localStorage.removeItem('fieldops_firestore_quota_until');
+    }
+  }
 }
 
 export function isFirestoreQuotaExceeded(): boolean {
-  return isQuotaExceeded;
+  if (quotaExceededUntil > Date.now()) {
+    return true;
+  }
+  if (quotaExceededUntil !== 0) {
+    quotaExceededUntil = 0;
+    try {
+      localStorage.removeItem('fieldops_firestore_quota_until');
+      enableNetwork(db).catch(() => {});
+    } catch {}
+  }
+  return false;
+}
+
+export function getFirestoreQuotaStatus() {
+  const isThrottled = quotaExceededUntil > Date.now();
+  const remainingSeconds = isThrottled ? Math.ceil((quotaExceededUntil - Date.now()) / 1000) : 0;
+  return {
+    isThrottled,
+    remainingSeconds,
+    writesInLastMinute,
+    backoffDurationSeconds,
+  };
+}
+
+export function resetFirestoreQuotaBackoff() {
+  quotaExceededUntil = 0;
+  backoffDurationSeconds = 60;
+  writesInLastMinute = 0;
+  try {
+    sessionStorage.removeItem('fieldops_firestore_quota_exceeded');
+    localStorage.removeItem('fieldops_firestore_quota_exceeded');
+    localStorage.removeItem('fieldops_firestore_quota_until');
+    enableNetwork(db).catch(() => {});
+  } catch {}
+}
+
+export function canPerformFirestoreWrite(): boolean {
+  if (isFirestoreQuotaExceeded()) return false;
+  const now = Date.now();
+  if (now - lastMinuteTimestamp >= 60000) {
+    writesInLastMinute = 0;
+    lastMinuteTimestamp = now;
+  }
+  if (writesInLastMinute >= MAX_WRITES_PER_MINUTE) {
+    console.warn('[Firestore Rate Limiter] Write rate limit reached for current minute. Queuing for next window.');
+    return false;
+  }
+  writesInLastMinute++;
+  return true;
 }
 
 export function handleFirestoreError(context: string, err: any) {
@@ -64,18 +120,16 @@ export function handleFirestoreError(context: string, err: any) {
     errMsg.includes('resource-exhausted') ||
     errMsg.includes('quota limit exceeded') ||
     errMsg.includes('quota exceeded') ||
-    errMsg.includes('quota')
+    errMsg.includes('quota') ||
+    errCode === '429'
   ) {
-    if (!isQuotaExceeded) {
-      isQuotaExceeded = true;
+    if (quotaExceededUntil <= Date.now()) {
+      quotaExceededUntil = Date.now() + (backoffDurationSeconds * 1000);
       try {
-        sessionStorage.setItem('fieldops_firestore_quota_exceeded', 'true');
-        localStorage.setItem('fieldops_firestore_quota_exceeded', 'true');
+        localStorage.setItem('fieldops_firestore_quota_until', String(quotaExceededUntil));
       } catch {}
-      try {
-        disableNetwork(db).catch(() => {});
-      } catch {}
-      console.warn(`[Firestore Quota Limit] ${context}: Free daily write/read quota limit reached. Application will operate seamlessly using local device storage.`);
+      console.warn(`[Firestore Quota Limit] ${context}: Quota temporarily reached. Automatic exponential backoff active for ${backoffDurationSeconds}s.`);
+      backoffDurationSeconds = Math.min(backoffDurationSeconds * 2, 900); // Max 15 minutes backoff
     }
   } else {
     console.error(`[Firestore Error] ${context}:`, err);
@@ -94,9 +148,18 @@ function debounceSnapshot<T>(fn: (data: T) => void, delayMs: number = 250): (dat
 }
 
 // --- APP SETTINGS ---
+export interface AppSettings {
+  leadSources: string[];
+  personTypes: string[];
+  constructionStages: string[];
+  telemetryEnabled?: boolean;
+  trainDispatchIntervalMs?: number;
+  heartbeatIntervalMs?: number;
+  trainCutoverTimestamp?: number;
+}
 
 export function subscribeAppSettings(onUpdate: (settings: AppSettings) => void) {
-  if (isQuotaExceeded) return () => {};
+  if (isFirestoreQuotaExceeded()) return () => {};
   try {
     const docRef = doc(db, SETTINGS_COL, 'global_config');
     let unsub: (() => void) | null = null;
@@ -116,7 +179,7 @@ export function subscribeAppSettings(onUpdate: (settings: AppSettings) => void) 
 }
 
 export async function saveAppSettingsToFirestore(settings: Partial<AppSettings>) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await setDoc(doc(db, SETTINGS_COL, 'global_config'), settings, { merge: true });
   } catch (err) {
@@ -125,7 +188,7 @@ export async function saveAppSettingsToFirestore(settings: Partial<AppSettings>)
 }
 
 export async function fetchTeamMembersDirectly(): Promise<User[]> {
-  if (isQuotaExceeded) return [];
+  if (isFirestoreQuotaExceeded()) return [];
   try {
     const snap = await getDocs(collection(db, TEAM_COL));
     return snap.docs.map(d => d.data() as User);
@@ -137,7 +200,7 @@ export async function fetchTeamMembersDirectly(): Promise<User[]> {
 
 // --- PHOTOS ---
 export function subscribePhotos(onUpdate: (photos: Photo[]) => void) {
-  if (isQuotaExceeded) return () => {};
+  if (isFirestoreQuotaExceeded()) return () => {};
   try {
     const q = query(collection(db, PHOTOS_COL));
     let unsub: (() => void) | null = null;
@@ -157,7 +220,7 @@ export function subscribePhotos(onUpdate: (photos: Photo[]) => void) {
 }
 
 export async function savePhotoToFirestore(photo: Photo) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const cleanPhoto = JSON.parse(JSON.stringify(photo)); // Ensure serializable
     await setDoc(doc(db, PHOTOS_COL, photo.id), cleanPhoto, { merge: true });
@@ -167,7 +230,7 @@ export async function savePhotoToFirestore(photo: Photo) {
 }
 
 export async function deletePhotoFromFirestore(photoId: string) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, PHOTOS_COL, photoId));
   } catch (err) {
@@ -177,7 +240,7 @@ export async function deletePhotoFromFirestore(photoId: string) {
 
 // --- TEAM MEMBERS ---
 export function subscribeTeamMembers(onUpdate: (members: User[]) => void) {
-  if (isQuotaExceeded) return () => {};
+  if (isFirestoreQuotaExceeded()) return () => {};
   try {
     const q = query(collection(db, TEAM_COL));
     let unsub: (() => void) | null = null;
@@ -197,7 +260,7 @@ export function subscribeTeamMembers(onUpdate: (members: User[]) => void) {
 }
 
 export async function saveTeamMemberToFirestore(member: User) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const cleanMember = JSON.parse(JSON.stringify(member));
     await setDoc(doc(db, TEAM_COL, member.id), cleanMember, { merge: true });
@@ -208,7 +271,7 @@ export async function saveTeamMemberToFirestore(member: User) {
 
 // --- FOLLOW UPS ---
 export function subscribeFollowUps(onUpdate: (followUps: FollowUp[]) => void) {
-  if (isQuotaExceeded) return () => {};
+  if (isFirestoreQuotaExceeded()) return () => {};
   try {
     const q = query(collection(db, FOLLOWUPS_COL));
     let unsub: (() => void) | null = null;
@@ -228,7 +291,7 @@ export function subscribeFollowUps(onUpdate: (followUps: FollowUp[]) => void) {
 }
 
 export async function saveFollowUpToFirestore(followUp: FollowUp) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const cleanFollowUp = JSON.parse(JSON.stringify(followUp));
     await setDoc(doc(db, FOLLOWUPS_COL, followUp.id), cleanFollowUp, { merge: true });
@@ -239,7 +302,7 @@ export async function saveFollowUpToFirestore(followUp: FollowUp) {
 
 // --- RECYCLE BIN ---
 export function subscribeRecycleBin(onUpdate: (items: RecycleItem[]) => void) {
-  if (isQuotaExceeded) return () => {};
+  if (isFirestoreQuotaExceeded()) return () => {};
   try {
     const q = query(collection(db, RECYCLE_COL));
     let unsub: (() => void) | null = null;
@@ -259,7 +322,7 @@ export function subscribeRecycleBin(onUpdate: (items: RecycleItem[]) => void) {
 }
 
 export async function saveRecycleItemToFirestore(item: RecycleItem) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const cleanItem = JSON.parse(JSON.stringify(item));
     await setDoc(doc(db, RECYCLE_COL, item.id), cleanItem, { merge: true });
@@ -270,43 +333,27 @@ export async function saveRecycleItemToFirestore(item: RecycleItem) {
 
 // --- ROUTE BREADCRUMBS & TELEMETRY TRAINS (CROSS-DEVICE STAFF MOVEMENT TRACKING) ---
 export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void) {
-  if (isQuotaExceeded) return () => {};
+  if (isFirestoreQuotaExceeded()) return () => {};
   let isSubscribed = true;
   let timer: any = null;
 
   const fetchAndNotify = async () => {
-    if (!isSubscribed || isQuotaExceeded || (typeof document !== 'undefined' && document.hidden)) return;
+    if (!isSubscribed || isFirestoreQuotaExceeded() || (typeof document !== 'undefined' && document.hidden)) return;
     try {
-      // Gap 6: Read cutover timestamp gate from global config
-      let trainCutoverTimestamp = 0;
-      try {
-        const configSnap = await getDoc(doc(db, SETTINGS_COL, 'global_config'));
-        if (configSnap.exists()) {
-          trainCutoverTimestamp = configSnap.data()?.trainCutoverTimestamp || 0;
-        }
-      } catch (e) {
-        // non-blocking
-      }
-
-      // Gap 2: Query filter for telemetry_train docs only
-      const trainQuery = query(
-        collection(db, BREADCRUMBS_COL),
-        where('type', '==', 'telemetry_train')
-      );
-      const snap = await getDocs(trainQuery);
       const allCrumbs: any[] = [];
       const now = Date.now();
       const twoDaysAgo = now - 48 * 60 * 60 * 1000;
 
+      const snap = await getDocs(collection(db, BREADCRUMBS_COL));
       snap.docs.forEach(d => {
         const data = d.data();
-        if (data && data.type === 'telemetry_train' && Array.isArray(data.pings)) {
-          // Train document: unpack pings within recent window
+        if (!data) return;
+        if (data.type === 'telemetry_train' && Array.isArray(data.pings)) {
+          // Backward compatibility: unpack legacy train pings
           if (!data.fromTs || data.fromTs >= twoDaysAgo || (now - (data.toTs || 0) < 48 * 3600000)) {
             data.pings.forEach((p: any) => {
               const pingTs = (p.timestamp && !isNaN(new Date(p.timestamp).getTime())) ? new Date(p.timestamp).getTime() : 0;
-              // Gap 6: Only include train pings at or after cutover timestamp (or if no cutover set)
-              if (!trainCutoverTimestamp || trainCutoverTimestamp === 0 || pingTs >= trainCutoverTimestamp) {
+              if (pingTs >= twoDaysAgo) {
                 allCrumbs.push({
                   ...p,
                   batchId: data.batchId,
@@ -317,24 +364,14 @@ export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void
               }
             });
           }
+        } else if (data.lat !== undefined && data.lng !== undefined) {
+          // Standard individual GPS breadcrumb
+          const docTs = (data.timestamp && !isNaN(new Date(data.timestamp).getTime())) ? new Date(data.timestamp).getTime() : 0;
+          if (docTs >= twoDaysAgo) {
+            allCrumbs.push(data);
+          }
         }
       });
-
-      // Gap 6: Only include legacy individual docs BEFORE the cutover timestamp
-      try {
-        const legacySnap = await getDocs(collection(db, BREADCRUMBS_COL));
-        legacySnap.docs.forEach(d => {
-          const data = d.data();
-          if (data && data.type !== 'telemetry_train' && data.lat !== undefined && data.lng !== undefined) {
-            const docTs = (data.timestamp && !isNaN(new Date(data.timestamp).getTime())) ? new Date(data.timestamp).getTime() : 0;
-            if (!trainCutoverTimestamp || trainCutoverTimestamp === 0 || docTs < trainCutoverTimestamp) {
-              allCrumbs.push(data);
-            }
-          }
-        });
-      } catch (e) {
-        // non-blocking legacy fetch
-      }
 
       if (isSubscribed) {
         onUpdate(allCrumbs);
@@ -366,21 +403,8 @@ export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void
   };
 }
 
-export async function saveTelemetryTrainToFirestore(trainDoc: any): Promise<boolean> {
-  if (isQuotaExceeded || !trainDoc || !trainDoc.userId) return false;
-  try {
-    const docId = `train_${trainDoc.userId}_${trainDoc.sessionId}_p${trainDoc.sessionPart || 1}`;
-    const cleanTrainDoc = JSON.parse(JSON.stringify(trainDoc));
-    await setDoc(doc(db, BREADCRUMBS_COL, docId), cleanTrainDoc, { merge: true });
-    return true;
-  } catch (err) {
-    handleFirestoreError('Saving telemetry train', err);
-    return false;
-  }
-}
-
 export async function saveRouteBreadcrumbToFirestore(breadcrumb: any) {
-  if (isQuotaExceeded || !breadcrumb || breadcrumb.lat === undefined || breadcrumb.lng === undefined) return;
+  if (isFirestoreQuotaExceeded() || !breadcrumb || breadcrumb.lat === undefined || breadcrumb.lng === undefined) return;
   try {
     const ts = (breadcrumb.timestamp && !isNaN(new Date(breadcrumb.timestamp).getTime())) 
       ? new Date(breadcrumb.timestamp).getTime() 
@@ -401,7 +425,7 @@ export async function saveRouteBreadcrumbToFirestore(breadcrumb: any) {
 
 // --- ODOMETER READINGS ---
 export function subscribeOdometerReadings(onUpdate: (readings: any[]) => void) {
-  if (isQuotaExceeded) return () => {};
+  if (isFirestoreQuotaExceeded()) return () => {};
   try {
     const q = query(collection(db, ODOMETER_COL), orderBy('timestamp', 'desc'));
     let unsub: (() => void) | null = null;
@@ -420,7 +444,7 @@ export function subscribeOdometerReadings(onUpdate: (readings: any[]) => void) {
 }
 
 export async function saveOdometerToFirestore(reading: any) {
-  if (isQuotaExceeded || !reading || !reading.id) return;
+  if (isFirestoreQuotaExceeded() || !reading || !reading.id) return;
   try {
     const cleanReading = JSON.parse(JSON.stringify(reading));
     await setDoc(doc(db, ODOMETER_COL, reading.id), cleanReading, { merge: true });
@@ -430,7 +454,7 @@ export async function saveOdometerToFirestore(reading: any) {
 }
 
 export async function deleteOdometerFromFirestore(readingId: string) {
-  if (isQuotaExceeded || !readingId) return;
+  if (isFirestoreQuotaExceeded() || !readingId) return;
   try {
     await deleteDoc(doc(db, ODOMETER_COL, readingId));
   } catch (err) {
@@ -440,11 +464,11 @@ export async function deleteOdometerFromFirestore(readingId: string) {
 
 // --- DELETE ALL RECYCLE ITEMS FROM FIRESTORE ---
 export async function deleteAllRecycleItemsFromFirestore() {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const snap = await getDocs(collection(db, RECYCLE_COL));
     for (const d of snap.docs) {
-      if (isQuotaExceeded) break;
+      if (isFirestoreQuotaExceeded()) break;
       await deleteDoc(doc(db, RECYCLE_COL, d.id));
     }
   } catch (err) {
@@ -453,7 +477,7 @@ export async function deleteAllRecycleItemsFromFirestore() {
 }
 
 export async function deleteRecycleItemFromFirestore(itemId: string) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     await deleteDoc(doc(db, RECYCLE_COL, itemId));
   } catch (err) {
@@ -468,7 +492,7 @@ export async function seedInitialDataIfEmpty(
   initialTeam: User[],
   initialSettings?: AppSettings
 ) {
-  if (isQuotaExceeded) return;
+  if (isFirestoreQuotaExceeded()) return;
   try {
     const configSnap = await getDoc(doc(db, SETTINGS_COL, 'global_config'));
     if (configSnap.exists() && configSnap.data()?.isSeeded) {
@@ -477,33 +501,33 @@ export async function seedInitialDataIfEmpty(
     }
 
     const photosSnap = await getDocs(collection(db, PHOTOS_COL));
-    if (photosSnap.empty && !isQuotaExceeded) {
+    if (photosSnap.empty && !isFirestoreQuotaExceeded()) {
       console.log('Seeding initial photos to Firestore...');
       for (const p of initialPhotos) {
-        if (isQuotaExceeded) break;
+        if (isFirestoreQuotaExceeded()) break;
         await savePhotoToFirestore(p);
       }
     }
 
     const teamSnap = await getDocs(collection(db, TEAM_COL));
-    if (teamSnap.empty && !isQuotaExceeded) {
+    if (teamSnap.empty && !isFirestoreQuotaExceeded()) {
       console.log('Seeding initial team to Firestore...');
       for (const m of initialTeam) {
-        if (isQuotaExceeded) break;
+        if (isFirestoreQuotaExceeded()) break;
         await saveTeamMemberToFirestore(m);
       }
     }
 
     const followUpsSnap = await getDocs(collection(db, FOLLOWUPS_COL));
-    if (followUpsSnap.empty && !isQuotaExceeded) {
+    if (followUpsSnap.empty && !isFirestoreQuotaExceeded()) {
       console.log('Seeding initial followups to Firestore...');
       for (const f of initialFollowUps) {
-        if (isQuotaExceeded) break;
+        if (isFirestoreQuotaExceeded()) break;
         await saveFollowUpToFirestore(f);
       }
     }
 
-    if (!isQuotaExceeded) {
+    if (!isFirestoreQuotaExceeded()) {
       await saveAppSettingsToFirestore({ 
         ...(initialSettings || { leadSources: [], personTypes: [], constructionStages: [] }), 
         isSeeded: true 
