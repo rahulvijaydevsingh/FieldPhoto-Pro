@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { useGpsEngine } from './useGpsEngine';
 import { teamRepository } from '../repositories/teamRepository';
 import { calculateDistanceMeters } from '../utils/locationUtils';
+import { TelemetryTrainManager } from './sync/TelemetryTrainManager';
 
 export function useGpsSideEffects() {
   const currentUser = useAppStore(s => s.currentUser);
@@ -16,25 +17,26 @@ export function useGpsSideEffects() {
     enabled: !!currentUser,
   });
 
-  // Periodic Online Presence Heartbeat
+  // Phase 6b: Heartbeat & Online Presence absorbed into TelemetryTrainManager (0 periodic DB writes)
   useEffect(() => {
     if (!currentUser) return;
 
-    const updatePresence = () => {
+    const updatePresenceInTrain = () => {
       const nowIso = new Date().toISOString();
-      teamRepository.save({
-        ...currentUser,
+      TelemetryTrainManager.getInstance().updatePresence({
+        userId: currentUser.id,
+        userName: currentUser.name,
         isOnline: true,
         lastSeenTime: nowIso,
       });
       lastHeartbeatRef.current = Date.now();
     };
 
-    // Immediate initial presence update
-    updatePresence();
+    // Immediate initial presence update in train memory
+    updatePresenceInTrain();
 
-    // Periodic presence heartbeat every 2 minutes
-    const interval = setInterval(updatePresence, 120000);
+    // Periodic presence heartbeat every 2 minutes (in memory only, dispatched with train)
+    const interval = setInterval(updatePresenceInTrain, 120000);
 
     // Clean exit on unload: one-off write for offline status
     const handleUnload = () => {

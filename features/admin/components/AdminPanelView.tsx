@@ -12,6 +12,7 @@ import PipelineInspector from './PipelineInspector';
 import BufferInspector from './BufferInspector';
 import OfflineSyncInspector from './OfflineSyncInspector';
 import GeofencesManager from './GeofencesManager';
+import TelemetryTrainConfigCard from './TelemetryTrainConfigCard';
 import AttendanceView from '../../../components/AttendanceView';
 import AnalyticsDashboardView from '../../analytics/components/AnalyticsDashboardView';
 import LeadEscalationView from '../../escalations/components/LeadEscalationView';
@@ -381,6 +382,9 @@ export default function AdminPanelView({
               />
             </div>
           </div>
+
+          {/* Telemetry Train & GPS Kill-Switch Controls */}
+          <TelemetryTrainConfigCard />
 
           {/* Recycle Bin / Deleted Items */}
           <RecycleBin 

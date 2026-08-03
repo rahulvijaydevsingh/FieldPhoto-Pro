@@ -24,6 +24,7 @@
 import { PendingPhotoItem, PendingBreadcrumbItem, OfflineSyncEngineStats } from './types';
 import { breadcrumbRepository } from '../../repositories/breadcrumbRepository';
 import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded, subscribeAppSettings } from '../../services/firebase';
+import { TelemetryTrainManager } from './TelemetryTrainManager';
 
 export class OfflineSyncEngine {
   private isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -138,28 +139,35 @@ export class OfflineSyncEngine {
     let photosFlushed = 0;
     let breadcrumbsFlushed = 0;
 
-    // 1. Flush Staff Telemetry Breadcrumbs via individual Firestore writes
+    // 1. Flush Staff Telemetry Breadcrumbs via Bundled Telemetry Train (Single Write)
     try {
       if (this.pendingBreadcrumbs.length > 0) {
         const itemsToSync = [...this.pendingBreadcrumbs];
-        let successfulCount = 0;
         for (const bc of itemsToSync) {
-          try {
-            await saveRouteBreadcrumbToFirestore(bc);
-            successfulCount++;
-          } catch (e) {
-            console.warn('Error syncing breadcrumb item:', e);
-          }
-        }
-        if (successfulCount > 0) {
-          breadcrumbsFlushed = successfulCount;
-          this.totalBreadcrumbsSynced += breadcrumbsFlushed;
-          this.pendingBreadcrumbs = this.pendingBreadcrumbs.slice(successfulCount);
-          this.saveStorage();
+          TelemetryTrainManager.getInstance().enqueuePing({
+            lat: bc.lat,
+            lng: bc.lng,
+            accuracy: bc.accuracy,
+            speed: bc.speed,
+            plusCode: bc.plusCode,
+            timestamp: bc.timestamp,
+            deviceInfo: bc.deviceInfo,
+            userId: bc.userId,
+            userName: bc.userName,
+          });
         }
       }
+
+      // Dispatch single bundled write to Firestore
+      const trainSuccess = await TelemetryTrainManager.getInstance().dispatchTrain('timer');
+      if (trainSuccess && this.pendingBreadcrumbs.length > 0) {
+        breadcrumbsFlushed = this.pendingBreadcrumbs.length;
+        this.totalBreadcrumbsSynced += breadcrumbsFlushed;
+        this.pendingBreadcrumbs = [];
+        this.saveStorage();
+      }
     } catch (err) {
-      console.warn('Breadcrumb sync batch error:', err);
+      console.warn('Breadcrumb sync train batch error:', err);
     }
 
     // 2. Flush Pending Photo Items

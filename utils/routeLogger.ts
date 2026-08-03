@@ -4,6 +4,7 @@
 import { getDeviceModelInfo } from './locationUtils';
 import { breadcrumbRepository } from '../repositories/breadcrumbRepository';
 import { offlineSyncEngine } from '../system/sync/OfflineSyncEngine';
+import { TelemetryTrainManager } from '../system/sync/TelemetryTrainManager';
 import { haversineMeters } from './distance';
 import { getDeviceId, getFullDeviceInfo } from './deviceFingerprint';
 import { saveRouteBreadcrumbToFirestore, isFirestoreQuotaExceeded } from '../services/firebase';
@@ -135,18 +136,28 @@ export function addLocalBreadcrumb(point: RouteBreadcrumb): RouteBreadcrumb[] {
       localStorage.setItem(SHARED_ROUTE_KEY, JSON.stringify(sharedRoute.slice(-1000)));
       window.dispatchEvent(new Event('fieldops_sync'));
 
-      // Enqueue breadcrumb into offline-first sync engine for Firestore cloud persistence
-      offlineSyncEngine.enqueueBreadcrumb({
-        lat: point.lat,
-        lng: point.lng,
-        accuracy: point.accuracy,
-        speed: point.speed,
-        plusCode: point.plusCode,
-        timestamp: point.timestamp,
-        deviceInfo: point.deviceInfo,
-        userId: point.userId || 'staff_u1',
-        userName: point.userName || 'Field Staff',
-      });
+      // Enqueue ping into TelemetryTrainManager buffer
+      TelemetryTrainManager.getInstance().enqueuePing(point);
+
+      const isCoreEvent = ['PHOTO_UPLOAD', 'ATTENDANCE_CHECK', 'ODOMETER_ENTRY'].includes(point.sourceEvent || '');
+
+      if (isCoreEvent) {
+        // Phase 2: Priority event triggers immediate piggybacked train dispatch without duplicate individual writes
+        TelemetryTrainManager.getInstance().dispatchTrain('priority_event').catch(() => {});
+      } else {
+        // Background breadcrumbs: Enqueue into 5-minute batch flusher
+        offlineSyncEngine.enqueueBreadcrumb({
+          lat: point.lat,
+          lng: point.lng,
+          accuracy: point.accuracy,
+          speed: point.speed,
+          plusCode: point.plusCode,
+          timestamp: point.timestamp,
+          deviceInfo: point.deviceInfo,
+          userId: point.userId || 'staff_u1',
+          userName: point.userName || 'Field Staff',
+        });
+      }
     } catch (e) {}
 
     return trimmed;
