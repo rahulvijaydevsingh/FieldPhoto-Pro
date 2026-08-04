@@ -3,6 +3,7 @@ import { User, Photo, RouteBreadcrumb, DEFAULT_AVATAR } from '../../../types';
 import { getDeviceModelInfo, getTimeAge, getMemberBreadcrumbs } from '../../../utils/locationUtils';
 import { getSharedRouteLogs } from '../../../utils/routeLogger';
 import { teamRepository } from '../../../repositories/teamRepository';
+import { useAppStore } from '../../../stores/useAppStore';
 import { 
   Users, Plus, Search, Trash2, Edit2, Shield, Eye, EyeOff, Camera, Check, X, 
   MapPin, RefreshCw, Radio, Zap, Navigation, Maximize2 
@@ -13,13 +14,15 @@ interface StaffManagementProps {
   onUpdateMembers: (members: User[]) => void;
   photos?: Photo[];
   cloudBreadcrumbs?: RouteBreadcrumb[];
+  onTrackStaff?: (staffId: string) => void;
 }
 
 export default function StaffManagement({
   members,
   onUpdateMembers,
   photos,
-  cloudBreadcrumbs = []
+  cloudBreadcrumbs = [],
+  onTrackStaff
 }: StaffManagementProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -38,12 +41,12 @@ export default function StaffManagement({
   const [newRole, setNewRole] = useState<'admin' | 'staff'>('staff');
 
   // Location Modal & Live Route Tracking State
-  const [locationModalMember, setLocationModalMember] = useState<User | null>(null);
-  const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
-  const [isLiveSyncing, setIsLiveSyncing] = useState(false);
-  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
-  const [showRouteLogs, setShowRouteLogs] = useState(false);
-  const [routeLogs, setRouteLogs] = useState<RouteBreadcrumb[]>([]);
+
+
+
+
+
+
 
   // Helper to ensure freshest breadcrumb or photo upload location overrides stale member.lastLocation
   const getFreshestMember = (m: User): User => {
@@ -159,39 +162,6 @@ export default function StaffManagement({
     onUpdateMembers(updated);
   };
 
-  const refreshStaffLocation = () => {
-    setIsRefreshingLocation(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (locationModalMember) {
-            const updatedLoc = {
-              lat: pos.coords.latitude,
-              lng: pos.coords.longitude,
-              accuracy: pos.coords.accuracy || 10,
-              timestamp: new Date().toISOString(),
-              address: 'Current Verified Staff Location',
-              isLive: true,
-              deviceInfo: getDeviceModelInfo()
-            };
-            const updatedMember = { ...locationModalMember, lastLocation: updatedLoc };
-            setLocationModalMember(updatedMember);
-            
-            const updatedList = members.map(m => m.id === updatedMember.id ? updatedMember : m);
-            onUpdateMembers(updatedList);
-          }
-          setIsRefreshingLocation(false);
-        },
-        () => {
-          setIsRefreshingLocation(false);
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    } else {
-      setIsRefreshingLocation(false);
-    }
-  };
-
   const isMemberOnline = (m: User): boolean => {
     if (!m) return false;
     if (m.isOnline && m.lastSeenTime) {
@@ -206,15 +176,6 @@ export default function StaffManagement({
   };
 
   const onlineCount = members.filter(isMemberOnline).length;
-
-  const handleInspectStaffLocation = (m: User) => {
-    const freshest = getFreshestMember(m);
-    setLocationModalMember(freshest);
-    setShowRouteLogs(false);
-    const logs = getSharedRouteLogs(m.id, m.name, cloudBreadcrumbs);
-    setRouteLogs(logs);
-    refreshStaffLocation();
-  };
 
   return (
     <div className="bg-[#2D2424] rounded-2xl border border-[#3A2E2E] p-6 space-y-6 shadow-xl">
@@ -388,7 +349,10 @@ export default function StaffManagement({
 
                   <div className="flex items-center gap-1.5">
                     <button 
-                      onClick={() => handleInspectStaffLocation(member)}
+                      onClick={() => {
+                        if (onTrackStaff) onTrackStaff(member.id);
+                        useAppStore.getState().navigateTo('route_tracker', { initialStaffId: member.id });
+                      }}
                       className="px-2.5 py-1.5 bg-field-gold/10 hover:bg-field-gold hover:text-black text-field-gold border border-field-gold/20 rounded-lg transition-all flex items-center gap-1.5 text-xs font-semibold"
                       title="Check Staff Location upon request (Admin only)"
                     >
@@ -419,216 +383,6 @@ export default function StaffManagement({
         })}
       </div>
 
-      {/* Staff Location Inspection Modal */}
-      {locationModalMember && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-[#2D2424] border border-[#3A2E2E] rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl space-y-4 my-auto relative">
-            <div className="flex items-center justify-between border-b border-[#3A2E2E] pb-3">
-              <div className="flex items-center gap-3">
-                <img src={locationModalMember.avatar || DEFAULT_AVATAR} alt={locationModalMember.name} className="w-10 h-10 rounded-full border-2 border-field-gold object-cover bg-[#1A1515]" />
-                <div>
-                  <h3 className="font-bold text-white text-base flex items-center gap-2">
-                    {locationModalMember.name}
-                    <span className="text-[10px] text-field-gold bg-field-gold/10 border border-field-gold/30 px-2 py-0.5 rounded-full font-mono">
-                      GPS Inspector
-                    </span>
-                  </h3>
-                  <p className="text-xs text-gray-400">{locationModalMember.email}</p>
-                </div>
-              </div>
-              <button onClick={() => setLocationModalMember(null)} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/5"><X size={20} /></button>
-            </div>
-
-            {(() => {
-              const loc = locationModalMember.lastLocation || {
-                lat: 30.9010,
-                lng: 75.8573,
-                accuracy: 10,
-                timestamp: new Date().toISOString(),
-                address: 'Punjab Region (Ludhiana / Amritsar Zone)',
-                plusCode: '8J52W724+8Q Ludhiana',
-                isLive: true,
-                deviceInfo: getDeviceModelInfo()
-              };
-              const isRecent = loc && loc.timestamp && (Date.now() - new Date(loc.timestamp).getTime() < 600000);
-
-              return (
-                <div className="space-y-4">
-                  {/* Live Status & Polling Banner */}
-                  <div className={`p-3 rounded-xl border flex items-center justify-between ${
-                    isLiveSyncing
-                      ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-400 shadow-md shadow-emerald-950/50'
-                      : isRecent 
-                        ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' 
-                        : 'bg-amber-950/20 border-amber-500/30 text-amber-400'
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded-full ${isLiveSyncing || isRecent ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
-                      <span className="text-xs font-bold uppercase tracking-wider">
-                        {isLiveSyncing ? '● Live Real-Time Tracking (Auto 8s)' : isRecent ? 'Fresh GPS Fix (<10 mins)' : 'Last Recorded Location'}
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-mono opacity-90 font-semibold">
-                      {getTimeAge(loc.timestamp)}
-                    </span>
-                  </div>
-
-                  {/* Square Map Window */}
-                  <div className="relative w-full aspect-square max-w-sm mx-auto rounded-2xl overflow-hidden border border-[#3A2E2E] bg-[#1A1515] shadow-xl group">
-                    <iframe
-                      title="Staff Location Map Preview"
-                      width="100%"
-                      height="100%"
-                      frameBorder="0"
-                      scrolling="no"
-                      marginHeight={0}
-                      marginWidth={0}
-                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${loc.lng - 0.005}%2C${loc.lat - 0.005}%2C${loc.lng + 0.005}%2C${loc.lat + 0.005}&layer=mapnik&marker=${loc.lat}%2C${loc.lng}`}
-                      className="w-full h-full opacity-90 group-hover:opacity-100 transition-opacity"
-                    />
-
-                    {/* Full Window Expand Button */}
-                    <button
-                      onClick={() => setIsMapFullscreen(true)}
-                      className="absolute top-2.5 right-2.5 px-3 py-1.5 bg-black/85 hover:bg-black text-field-gold rounded-xl border border-field-gold/40 backdrop-blur-md shadow-lg transition-all active:scale-95 flex items-center gap-1.5 text-xs font-bold z-10"
-                      title="View map in full window layout"
-                    >
-                      <Maximize2 size={13} />
-                      Full Window
-                    </button>
-
-                    {/* Live Badge */}
-                    <div className="absolute top-2.5 left-2.5 bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 flex items-center gap-1.5 text-[10px] text-white">
-                      <span className={`w-2 h-2 rounded-full ${isRecent ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                      <span className="font-semibold">{isRecent ? 'LIVE FIX' : 'SAVED FIX'}</span>
-                    </div>
-
-                    {/* Bottom Overlay Bar */}
-                    <div className="absolute bottom-2 left-2 right-2 bg-black/90 backdrop-blur-md p-2.5 rounded-xl border border-white/10 space-y-1 text-white text-[11px]">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-                          <span className="font-semibold text-emerald-300">
-                            Accuracy: ±{Math.round(loc.accuracy || 10)}m
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-field-gold font-mono font-bold">
-                          {loc.plusCode?.split(' ')[0] || 'GPS'}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-[10px] text-gray-300 pt-1 border-t border-white/10">
-                        <span className="flex items-center gap-1 font-mono text-emerald-300 truncate max-w-[170px]" title={loc.deviceInfo || getDeviceModelInfo()}>
-                          📱 {loc.deviceInfo || getDeviceModelInfo()}
-                        </span>
-                        <span className="font-mono text-gray-300 flex-shrink-0">
-                          {new Date(loc.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Timestamps */}
-                  <div className="bg-[#1A1515] p-3 rounded-xl border border-[#3A2E2E] grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold block flex items-center gap-1 text-emerald-400">
-                        <Zap size={12} /> Login Time
-                      </span>
-                      <span className="text-xs font-mono font-medium text-gray-200">
-                        {locationModalMember.lastLoginTime 
-                          ? `${new Date(locationModalMember.lastLoginTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${new Date(locationModalMember.lastLoginTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
-                          : 'Not recorded'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-gray-500 uppercase font-bold block flex items-center gap-1 text-amber-400">
-                        <Radio size={12} /> Logout Time
-                      </span>
-                      <span className="text-xs font-mono font-medium text-gray-200">
-                        {locationModalMember.lastLogoutTime 
-                          ? `${new Date(locationModalMember.lastLogoutTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${new Date(locationModalMember.lastLogoutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
-                          : 'Active Session'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions & Route Logs Toggle */}
-                  <div className="flex flex-col gap-2 pt-1">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => window.open(`https://www.google.com/maps?q=${loc.lat},${loc.lng}`, '_blank')}
-                        className="flex-1 py-2.5 bg-field-gold text-black font-bold text-xs rounded-xl flex items-center justify-center gap-2 hover:bg-field-goldHover transition-colors shadow-md"
-                      >
-                        <MapPin size={16} /> Open Google Maps
-                      </button>
-                      
-                      <button
-                        onClick={() => setShowRouteLogs(!showRouteLogs)}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all border ${
-                          showRouteLogs 
-                            ? 'bg-field-gold/20 text-field-gold border-field-gold/40' 
-                            : 'bg-[#1A1515] border-[#3A2E2E] text-gray-300 hover:text-white'
-                        }`}
-                      >
-                        <Navigation size={14} />
-                        {showRouteLogs ? 'Hide History' : `Route History (${routeLogs.length})`}
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        if (isLiveSyncing) {
-                          setIsLiveSyncing(false);
-                        } else {
-                          setIsLiveSyncing(true);
-                          refreshStaffLocation();
-                        }
-                      }}
-                      className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md ${
-                        isLiveSyncing 
-                          ? 'bg-emerald-500 text-black shadow-emerald-500/20 animate-pulse' 
-                          : 'bg-[#1A1515] border border-[#3A2E2E] text-gray-200 hover:text-white hover:bg-[#251f1f]'
-                      }`}
-                      title="Toggle active real-time location polling every 8 seconds"
-                    >
-                      <RefreshCw size={14} className={isLiveSyncing || isRefreshingLocation ? 'animate-spin' : ''} />
-                      {isLiveSyncing ? '● LIVE SYNC ACTIVE' : 'Start Live Sync'}
-                    </button>
-                  </div>
-
-                  {/* Route History Breadcrumb Log List */}
-                  {showRouteLogs && (
-                    <div className="bg-[#1A1515] p-3 rounded-xl border border-[#3A2E2E] space-y-2 max-h-48 overflow-y-auto">
-                      <div className="flex items-center justify-between text-xs font-bold text-field-gold border-b border-[#3A2E2E] pb-1.5">
-                        <span className="flex items-center gap-1"><Navigation size={12} /> Logged App Location Breadcrumbs</span>
-                        <span className="text-[10px] text-gray-400 font-normal">{routeLogs.length} Records</span>
-                      </div>
-                      {routeLogs.length === 0 ? (
-                        <p className="text-xs text-gray-400 italic py-2 text-center">No location breadcrumbs logged yet for this session.</p>
-                      ) : (
-                        <div className="space-y-1.5 text-[11px] font-mono">
-                          {routeLogs.slice().reverse().map((crumb, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-1.5 bg-[#2D2424] rounded border border-[#3A2E2E]">
-                              <div className="flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-field-gold" />
-                                <span className="text-gray-200">{crumb.lat.toFixed(5)}, {crumb.lng.toFixed(5)}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                                <span>{crumb.plusCode ? crumb.plusCode.split(' ')[0] : ''}</span>
-                                <span>{new Date(crumb.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(crumb.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

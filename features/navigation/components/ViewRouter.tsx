@@ -251,7 +251,11 @@ export default function ViewRouter() {
             }
             return (
               <div className="p-4 md:p-0">
-                <RouteTrackerView currentUser={currentUser} teamMembers={teamMembers} />
+                <RouteTrackerView
+                  currentUser={currentUser}
+                  teamMembers={teamMembers}
+                  initialStaffId={viewParams.initialStaffId}
+                />
               </div>
             );
 
