@@ -11,7 +11,7 @@ import {
   playAttendanceAudioAlert
 } from '../services/attendance';
 import { Clock, MapPin, CheckCircle2, AlertTriangle, Calendar, Users, Filter, Smartphone, Settings, Shield, Volume2, Camera, Save, RefreshCw, UserCheck, Gauge } from 'lucide-react';
-import OdometerTrackerView from './OdometerTrackerView';
+import { useAppStore } from '../stores/useAppStore';
 
 interface AttendanceViewProps {
   currentUser: User;
@@ -19,7 +19,8 @@ interface AttendanceViewProps {
 }
 
 export default function AttendanceView({ currentUser, teamMembers = [] }: AttendanceViewProps) {
-  const [activeTab, setActiveTab] = useState<'logs' | 'odometer' | 'settings'>('logs');
+  const [activeTab, setActiveTab] = useState<'logs' | 'settings'>('logs');
+  const navigateTo = useAppStore(s => s.navigateTo);
   const [history, setHistory] = useState<AttendanceDay[]>([]);
   const [todayData, setTodayData] = useState<AttendanceDay | null>(null);
   const [selectedUserFilter, setSelectedUserFilter] = useState<string>(currentUser.role === 'admin' ? 'all' : currentUser.id);
@@ -140,12 +141,11 @@ export default function AttendanceView({ currentUser, teamMembers = [] }: Attend
           </button>
 
           <button
-            onClick={() => setActiveTab('odometer')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'odometer' ? 'bg-[#D99026] text-black shadow' : 'text-gray-400 hover:text-white'
-            }`}
+            type="button"
+            onClick={() => navigateTo('odometer')}
+            className="px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 text-gray-400 hover:text-white"
           >
-            <Gauge size={14} /> Vehicle Odometer & Mileage
+            <Gauge size={14} /> → Open Vehicle Odometer Tracker
           </button>
 
           {currentUser.role === 'admin' && (
@@ -327,9 +327,6 @@ export default function AttendanceView({ currentUser, teamMembers = [] }: Attend
             </div>
           )}
         </div>
-      ) : activeTab === 'odometer' ? (
-        /* TAB 2: ODOMETER & VEHICLE MILEAGE LOGS */
-        <OdometerTrackerView currentUser={currentUser} teamMembers={teamMembers} />
       ) : (
         /* TAB 3: POLICY & SCHEDULE CONFIGURATOR */
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

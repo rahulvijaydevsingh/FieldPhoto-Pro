@@ -8,13 +8,23 @@ import { MapPin, Users, Calendar, Navigation, Shield, RefreshCw } from 'lucide-r
 interface RouteTrackerViewProps {
   currentUser: User;
   teamMembers: User[];
+  initialStaffId?: string;
 }
 
-export default function RouteTrackerView({ currentUser, teamMembers }: RouteTrackerViewProps) {
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(currentUser.role === 'admin' ? 'all' : currentUser.id);
+export default function RouteTrackerView({ currentUser, teamMembers, initialStaffId }: RouteTrackerViewProps) {
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(
+    initialStaffId || (currentUser.role === 'admin' ? 'all' : currentUser.id)
+  );
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [breadcrumbs, setBreadcrumbs] = useState<RouteBreadcrumb[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Sync selectedStaffId state to initialStaffId prop when it changes
+  useEffect(() => {
+    if (initialStaffId) {
+      setSelectedStaffId(initialStaffId);
+    }
+  }, [initialStaffId]);
 
   useEffect(() => {
     setLoading(true);
