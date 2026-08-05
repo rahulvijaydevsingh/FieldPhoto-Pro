@@ -31,6 +31,8 @@ export default function StaffManagement({
   const [editDesignation, setEditDesignation] = useState('');
   const [editRole, setEditRole] = useState<'admin' | 'staff'>('staff');
   const [editAvatar, setEditAvatar] = useState('');
+  const [editCanShare, setEditCanShare] = useState(true);
+  const [editCanBulkExport, setEditCanBulkExport] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   
   const [isAdding, setIsAdding] = useState(false);
@@ -39,6 +41,8 @@ export default function StaffManagement({
   const [newPassword, setNewPassword] = useState('');
   const [newDesignation, setNewDesignation] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'staff'>('staff');
+  const [newCanShare, setNewCanShare] = useState(true);
+  const [newCanBulkExport, setNewCanBulkExport] = useState(false);
 
   // Location Modal & Live Route Tracking State
 
@@ -93,6 +97,8 @@ export default function StaffManagement({
     setEditDesignation(m.designation || (m.role === 'admin' ? 'Managing Director / Admin' : 'Senior Field Representative'));
     setEditRole(m.role);
     setEditAvatar(m.avatar || '');
+    setEditCanShare(m.permissions?.canShare ?? true);
+    setEditCanBulkExport(m.permissions?.canBulkExport ?? false);
   };
 
   const handleSaveEdit = (id: string) => {
@@ -105,7 +111,10 @@ export default function StaffManagement({
           password: editPassword,
           designation: editDesignation,
           role: editRole,
-          avatar: editAvatar
+          avatar: editAvatar,
+          permissions: editRole === 'admin'
+            ? { canShare: true, canBulkExport: true }
+            : { canShare: editCanShare, canBulkExport: editCanBulkExport }
         };
         teamRepository.save(updatedUser);
         return updatedUser;
@@ -128,12 +137,21 @@ export default function StaffManagement({
       password: newPassword || '123456',
       designation: newDesignation || (newRole === 'admin' ? 'Managing Director / Admin' : 'Field Representative'),
       role: newRole,
-      avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`
+      avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+      permissions: newRole === 'admin'
+        ? { canShare: true, canBulkExport: true }
+        : { canShare: newCanShare, canBulkExport: newCanBulkExport }
     };
     teamRepository.save(newMember);
     onUpdateMembers([...members, newMember]);
     setIsAdding(false);
-    setNewName(''); setNewEmail(''); setNewPassword(''); setNewDesignation(''); setNewRole('staff');
+    setNewName('');
+    setNewEmail('');
+    setNewPassword('');
+    setNewDesignation('');
+    setNewRole('staff');
+    setNewCanShare(true);
+    setNewCanBulkExport(false);
   };
 
   const handleDeleteMember = (member: User) => {
@@ -233,6 +251,26 @@ export default function StaffManagement({
               </select>
             </div>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="flex items-center justify-between gap-3 bg-[#2D2424] border border-[#3A2E2E] rounded-lg px-3 py-2.5 text-xs text-white">
+              <span>Allow Site Detail Sharing</span>
+              <input
+                type="checkbox"
+                checked={newRole === 'admin' ? true : newCanShare}
+                onChange={(e) => setNewCanShare(e.target.checked)}
+                disabled={newRole === 'admin'}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 bg-[#2D2424] border border-[#3A2E2E] rounded-lg px-3 py-2.5 text-xs text-white">
+              <span>Allow Bulk Data Export</span>
+              <input
+                type="checkbox"
+                checked={newRole === 'admin' ? true : newCanBulkExport}
+                onChange={(e) => setNewCanBulkExport(e.target.checked)}
+                disabled={newRole === 'admin'}
+              />
+            </label>
+          </div>
           <div className="flex justify-end gap-2 pt-2 border-t border-[#3A2E2E]">
             <button onClick={() => setIsAdding(false)} className="px-4 py-2 bg-[#2D2424] text-gray-300 rounded-lg text-xs font-bold">Cancel</button>
             <button onClick={handleAddMember} className="px-5 py-2 bg-field-gold text-black rounded-lg text-xs font-bold flex items-center gap-1"><Check size={16} /> Save Member</button>
@@ -284,6 +322,27 @@ export default function StaffManagement({
                       <label className="block text-[10px] text-gray-400 mb-1">Designation</label>
                       <input type="text" value={editDesignation} onChange={e => setEditDesignation(e.target.value)} className="w-full p-2 bg-[#2D2424] border border-[#3A2E2E] rounded text-white" />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    <label className="flex items-center justify-between gap-3 bg-[#2D2424] border border-[#3A2E2E] rounded px-3 py-2">
+                      <span>Allow Site Detail Sharing</span>
+                      <input
+                        type="checkbox"
+                        checked={editRole === 'admin' ? true : editCanShare}
+                        onChange={(e) => setEditCanShare(e.target.checked)}
+                        disabled={editRole === 'admin'}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 bg-[#2D2424] border border-[#3A2E2E] rounded px-3 py-2">
+                      <span>Allow Bulk Data Export</span>
+                      <input
+                        type="checkbox"
+                        checked={editRole === 'admin' ? true : editCanBulkExport}
+                        onChange={(e) => setEditCanBulkExport(e.target.checked)}
+                        disabled={editRole === 'admin'}
+                      />
+                    </label>
                   </div>
 
                   <div className="flex justify-between items-center pt-2 border-t border-[#3A2E2E]">
