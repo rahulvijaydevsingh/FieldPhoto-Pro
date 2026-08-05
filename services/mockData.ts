@@ -8,7 +8,11 @@ export const DEMO_ADMIN: User = {
   password: 'admin',
   role: 'admin',
   designation: 'Managing Director / Admin',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+  permissions: {
+    canShare: true,
+    canBulkExport: true,
+  }
 };
 
 export const DEMO_STAFF: User = {
@@ -18,7 +22,11 @@ export const DEMO_STAFF: User = {
   password: 'Amanpreet@93',
   role: 'staff',
   designation: 'Senior Field Representative',
-  avatar: 'https://i.pravatar.cc/150?u=u2'
+  avatar: 'https://i.pravatar.cc/150?u=u2',
+  permissions: {
+    canShare: true,
+    canBulkExport: false,
+  }
 };
 
 export const TEAM_MEMBERS: User[] = [DEMO_ADMIN, DEMO_STAFF];
@@ -50,7 +58,8 @@ const INITIAL_PHOTOS: Photo[] = [
     site_lng: 75.857300,
     gps: { lat: 30.901000, lng: 75.857300 },
     plusCode: '8J52W724+8Q Ludhiana',
-    peopleMet: [{ id: 'pm1', designation: 'Owner', name: 'Suresh Raina', phone: '9876543210', email: 'suresh@example.com', alternatePhone: '', firmName: 'Raina Residence' }]
+    peopleMet: [{ id: 'pm1', designation: 'Owner', name: 'Suresh Raina', phone: '9876543210', email: 'suresh@example.com', alternatePhone: '', firmName: 'Raina Residence' }],
+    photoType: 'lead'
   },
   {
     id: 'p2',
@@ -70,7 +79,8 @@ const INITIAL_PHOTOS: Photo[] = [
     site_lat: 30.912345,
     site_lng: 75.864321,
     gps: { lat: 30.912345, lng: 75.864321 },
-    plusCode: '8J52W856+9R Ludhiana'
+    plusCode: '8J52W856+9R Ludhiana',
+    photoType: 'lead'
   }
 ];
 
