@@ -102,6 +102,7 @@ export interface AppSettings {
   trainDispatchIntervalMs?: number;
   heartbeatIntervalMs?: number;
   trainCutoverTimestamp?: number;
+  isSeeded?: boolean;
 }
 
 export function subscribeAppSettings(onUpdate: (settings: AppSettings) => void) {
@@ -212,6 +213,15 @@ export async function saveTeamMemberToFirestore(member: User) {
     await setDoc(doc(db, TEAM_COL, member.id), cleanMember, { merge: true });
   } catch (err) {
     handleFirestoreError('Saving team member', err);
+  }
+}
+
+export async function deleteTeamMemberFromFirestore(memberId: string) {
+  if (isQuotaExceeded || !memberId) return;
+  try {
+    await deleteDoc(doc(db, TEAM_COL, memberId));
+  } catch (err) {
+    handleFirestoreError('Deleting team member', err);
   }
 }
 
