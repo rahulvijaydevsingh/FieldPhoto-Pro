@@ -6,6 +6,7 @@ import {
   User as UserIcon, Building, ExternalLink, FileText, Tag, Shield, Clock, HardHat, ArrowLeft
 } from 'lucide-react';
 import { getSafePhotoDate, formatSafePhotoDate, formatSafePhotoDateTime } from '../services/dateUtils';
+import { exportPhotosToExcel } from '../utils/exportUtils';
 
 interface Props {
   user: User;
@@ -49,6 +50,10 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
 
   const filteredPhotos = useMemo(() => {
     let result = photos.filter(p => {
+      if (p.photoType === 'odometer' || p.photoType === 'attendance') {
+        return false;
+      }
+
       // 1. Base Permission Filter (Admins see everything, Staff sees their own submissions)
       if (user.role !== 'admin') {
         const isMyLead = p.uploaderId === user.id || 
@@ -147,7 +152,19 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
   };
 
   const handleShare = async () => {
-    const textToShare = `I've selected ${selectedPhotos.length} photos for the project.`;
+    if (user.role !== 'admin' && user.permissions?.canShare === false) {
+      alert('You do not have permission to share lead details.');
+      return;
+    }
+
+    const selectedItems = filteredPhotos.filter((photo) => selectedPhotos.includes(photo.id));
+    const textToShare = selectedItems.length === 0
+      ? `No lead photos selected.`
+      : selectedItems.map((photo, index) => {
+          const status = photo.status.replace('-', ' ');
+          const staff = photo.staffMember || photo.uploaderName || 'Staff';
+          return `${index + 1}. ${photo.siteName || 'Untitled Site'}\nPlus Code: ${photo.plusCode || 'Not available'}\nStatus: ${status}\nStaff: ${staff}`;
+        }).join('\n\n');
     
     if (navigator.share) {
       try {
@@ -160,8 +177,28 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
         console.log('Error sharing', error);
       }
     } else {
-      alert(`Copied to clipboard: ${textToShare}`);
+      navigator.clipboard.writeText(textToShare)
+        .then(() => alert('Lead details copied to clipboard.'))
+        .catch(() => alert(textToShare));
     }
+  };
+
+  const handleExport = () => {
+    const canExport = user.role === 'admin' || user.permissions?.canBulkExport;
+    if (!canExport) {
+      alert('You do not have permission to export bulk lead data.');
+      return;
+    }
+
+    const selected = filteredPhotos.filter((photo) => selectedPhotos.includes(photo.id));
+    const exportRows = selected.length > 0 ? selected : filteredPhotos;
+    exportPhotosToExcel(exportRows, 'FieldTrack_Gallery_Leads', {
+      actorUserId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      selectedCount: selected.length,
+    });
+    onExport();
   };
 
   const toggleStatusFilter = (st: string) => {
@@ -421,16 +458,18 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
             <button onClick={() => setSelectedPhotos([])} className="text-field-gold text-xs hover:underline">Deselect All</button>
           </div>
           <div className="flex gap-3">
-            <button 
-              onClick={handleShare}
-              className="w-10 h-10 rounded-full bg-[#1A1515] text-white flex items-center justify-center border border-[#3A2E2E] hover:border-field-gold hover:text-field-gold transition-colors"
-            >
-              <Share2 size={18} />
-            </button>
-            
-            {user.role === 'admin' && (
+            {(user.role === 'admin' || user.permissions?.canShare !== false) && (
               <button 
-                onClick={onExport}
+                onClick={handleShare}
+                className="w-10 h-10 rounded-full bg-[#1A1515] text-white flex items-center justify-center border border-[#3A2E2E] hover:border-field-gold hover:text-field-gold transition-colors"
+              >
+                <Share2 size={18} />
+              </button>
+            )}
+            
+            {(user.role === 'admin' || user.permissions?.canBulkExport) && (
+              <button 
+                onClick={handleExport}
                 className="bg-field-gold text-black px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#b57b17] transition-colors shadow-lg shadow-field-gold/20"
               >
                 <Download size={16} /> Export CSV
