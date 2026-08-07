@@ -193,8 +193,13 @@ export interface FollowUp {
   id: string;
   photoId: string;
   assignedToId: string;
+  userId?: string;
+  userName?: string;
+  createdBy?: string;
+  assignedStaff?: string;
   type: FollowUpType;
   date: string; // ISO Date
+  dueDate?: string;
   notes: string;
   status: FollowUpStatus;
   isOverdue?: boolean;
@@ -208,6 +213,10 @@ export interface Photo {
   captureDate: string; // ISO
   uploaderId: string;
   uploaderName: string;
+  uploadedBy?: string;
+  assignedTo?: string;
+  userId?: string;
+  clientName?: string;
   staffMember?: string;
   status: PhotoStatus;
   syncStatus?: SyncStatus;
@@ -297,10 +306,12 @@ export interface RouteBreadcrumb {
   networkType?: string;
   userId?: string;
   userName?: string;
+  userAvatar?: string;
+  batchId?: string;
   geofenceIds?: string[];
   
   // Forensic tracking attributes
-  sourceEvent?: 'APP_LOAD' | 'PHOTO_UPLOAD' | 'ATTENDANCE_CHECK' | 'HEARTBEAT' | 'MANUAL' | 'ROUTE_TRACKER';
+  sourceEvent?: 'APP_LOAD' | 'PHOTO_UPLOAD' | 'ATTENDANCE_CHECK' | 'HEARTBEAT' | 'MANUAL' | 'ROUTE_TRACKER' | 'ODOMETER_ENTRY';
   photoUploadSource?: 'DIRECT_CAPTURE' | 'GALLERY';
   locationProvider?: 'GPS_HARDWARE' | 'WIFI_GOOGLE' | 'CELL_TOWER' | 'EXIF_FALLBACK';
   isMocked?: boolean;

@@ -156,6 +156,7 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
   const extractPhotoMeta = async (file: File, fallbackGps: { lat: number; lng: number }) => {
     try {
       const tags = await ExifReader.load(file, { expanded: true });
+      const tagsAny = tags as any;
       let gps: { lat: number; lng: number } | undefined;
       let captureDate: string | undefined;
       let deviceModel: string | undefined;
@@ -164,21 +165,21 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
       let rawLat: number | undefined;
       let rawLng: number | undefined;
 
-      if (tags.gps) {
-        const latRef = tags.gps.LatitudeRef || tags.gps.GPSLatitudeRef;
-        const lngRef = tags.gps.LongitudeRef || tags.gps.GPSLongitudeRef;
-        rawLat = parseExifCoordinate(tags.gps.Latitude, latRef);
-        rawLng = parseExifCoordinate(tags.gps.Longitude, lngRef);
+      if (tagsAny.gps) {
+        const latRef = tagsAny.gps.LatitudeRef || tagsAny.gps.GPSLatitudeRef;
+        const lngRef = tagsAny.gps.LongitudeRef || tagsAny.gps.GPSLongitudeRef;
+        rawLat = parseExifCoordinate(tagsAny.gps.Latitude, latRef);
+        rawLng = parseExifCoordinate(tagsAny.gps.Longitude, lngRef);
       }
 
-      if ((rawLat === undefined || rawLng === undefined) && tags) {
-        const latRef = tags.GPSLatitudeRef || tags.image?.GPSLatitudeRef || tags.exif?.GPSLatitudeRef;
-        const lngRef = tags.GPSLongitudeRef || tags.image?.GPSLongitudeRef || tags.exif?.GPSLongitudeRef;
+      if ((rawLat === undefined || rawLng === undefined) && tagsAny) {
+        const latRef = tagsAny.GPSLatitudeRef || tagsAny.image?.GPSLatitudeRef || tagsAny.exif?.GPSLatitudeRef;
+        const lngRef = tagsAny.GPSLongitudeRef || tagsAny.image?.GPSLongitudeRef || tagsAny.exif?.GPSLongitudeRef;
         if (rawLat === undefined) {
-          rawLat = parseExifCoordinate(tags.GPSLatitude || tags.image?.GPSLatitude || tags.exif?.GPSLatitude, latRef);
+          rawLat = parseExifCoordinate(tagsAny.GPSLatitude || tagsAny.image?.GPSLatitude || tagsAny.exif?.GPSLatitude, latRef);
         }
         if (rawLng === undefined) {
-          rawLng = parseExifCoordinate(tags.GPSLongitude || tags.image?.GPSLongitude || tags.exif?.GPSLongitude, lngRef);
+          rawLng = parseExifCoordinate(tagsAny.GPSLongitude || tagsAny.image?.GPSLongitude || tagsAny.exif?.GPSLongitude, lngRef);
         }
       }
 
@@ -194,8 +195,8 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
       }
 
       // Check Exif Tags for Camera Make & Model
-      const makeTag = tags.Make || tags.image?.Make || tags.exif?.Make;
-      const modelTag = tags.Model || tags.image?.Model || tags.exif?.Model;
+      const makeTag = tagsAny.Make || tagsAny.image?.Make || tagsAny.exif?.Make;
+      const modelTag = tagsAny.Model || tagsAny.image?.Model || tagsAny.exif?.Model;
       const makeStr = makeTag?.description ? String(makeTag.description).trim() : '';
       const modelStr = modelTag?.description ? String(modelTag.description).trim() : '';
 
@@ -209,8 +210,8 @@ export default function UploadView({ user, isOnline, onUpload, onViewPending }: 
         deviceModel = makeStr;
       }
 
-      if (tags.exif) {
-        const dtTag = tags.exif.DateTimeOriginal || tags.exif.CreateDate || tags.exif.DateTime;
+      if (tagsAny.exif) {
+        const dtTag = tagsAny.exif.DateTimeOriginal || tagsAny.exif.CreateDate || tagsAny.exif.DateTime;
         if (dtTag && dtTag.description) {
           const parts = String(dtTag.description).trim().split(' ');
           if (parts.length === 2) {

@@ -240,11 +240,11 @@ export default function ViewRouter() {
               return (
                 <div className="p-4 md:p-0">
                   <DashboardView 
-                    currentUser={currentUser}
+                    user={currentUser}
                     photos={photos}
                     followUps={followUps}
-                    teamMembers={teamMembers}
-                    onNavigate={navigateTo}
+                    onChangeView={(v, p) => navigateTo(v, p)}
+                    onToggleFollowUpStatus={(id) => toggleFollowUp(id)}
                   />
                 </div>
               );

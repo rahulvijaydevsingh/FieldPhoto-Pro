@@ -24,6 +24,12 @@ export interface PhotoPipelinePayload {
   photo: Partial<Photo>;
   user: User;
   isOnline: boolean;
+  isDirectCapture?: boolean;
+  exifData?: {
+    dateTimeOriginal?: string;
+    make?: string;
+    model?: string;
+  };
   fallbackGps: { lat: number; lng: number };
   logs: PipelineLogEntry[];
   metadata: {

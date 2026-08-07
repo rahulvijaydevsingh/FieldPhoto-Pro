@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { photoPipelineEngine } from '../../../system/pipeline/PhotoProcessingPipeline';
 import { PhotoPipelineResult } from '../../../system/pipeline/types';
-import { User } from '../../../types';
+import { DEFAULT_AVATAR, User } from '../../../types';
 
 interface PipelineInspectorProps {
   currentUser?: User;
@@ -57,7 +57,8 @@ export default function PipelineInspector({ currentUser }: PipelineInspectorProp
         name: 'Admin User',
         email: 'admin@fieldphoto.pro',
         role: 'admin',
-        designation: 'Field Inspector'
+        designation: 'Field Inspector',
+        avatar: DEFAULT_AVATAR,
       };
 
       const result = await photoPipelineEngine.processPhoto(
@@ -218,7 +219,7 @@ export default function PipelineInspector({ currentUser }: PipelineInspectorProp
                       </div>
                       <div>ID: {lastResult.photo.id}</div>
                       <div>Plus Code: {lastResult.photo.plusCode || 'None'}</div>
-                      <div>Status: {lastResult.photo.syncStatus.toUpperCase()}</div>
+                      <div>Status: {(lastResult.photo.syncStatus || 'pending').toUpperCase()}</div>
                     </div>
                   )}
                 </div>

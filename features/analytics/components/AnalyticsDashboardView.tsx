@@ -16,7 +16,7 @@ export default function AnalyticsDashboardView({ photos, followUps, teamMembers 
     const verifiedGps = photos.filter(p => p.gps || p.site_lat).length;
     const wonLeads = photos.filter(p => p.status === 'won').length;
     const conversionRate = photos.length > 0 ? Math.round((wonLeads / photos.length) * 100) : 0;
-    const overdueCount = followUps.filter(f => f.status === 'overdue' || (f.status === 'pending' && new Date(f.dueDate) < new Date())).length;
+    const overdueCount = followUps.filter(f => f.status === 'overdue' || (f.status === 'pending' && new Date(f.dueDate || f.date) < new Date())).length;
 
     return {
       totalVisits: photos.length,
