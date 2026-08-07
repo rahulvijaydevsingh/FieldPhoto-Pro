@@ -68,7 +68,7 @@ export default function VisitsExplorer({
       id: p.id,
       siteName: p.siteName || p.fileName || 'Site Visit',
       staffMember: normalizedUploader,
-      status: p.status === 'completed' ? 'Completed' : p.status === 'in-progress' ? 'In Progress' : p.hasDraft ? 'Draft' : 'New Upload',
+      status: p.status === 'in-progress' ? 'In Progress' : p.hasDraft ? 'Draft' : 'New Upload',
       lat: p.site_lat !== undefined ? p.site_lat : (p.gps?.lat || 30.901000),
       lng: p.site_lng !== undefined ? p.site_lng : (p.gps?.lng || 75.857300),
       dateStr: formatSafePhotoDateTime(p.captureDate, p.uploadDate),
