@@ -374,6 +374,7 @@ export async function markAttendanceSlot(
       lat,
       lng,
       accuracy,
+      timestamp: new Date().toISOString(),
       plusCode,
       deviceInfo,
       userId,
