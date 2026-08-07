@@ -14,7 +14,7 @@ export function calculateLeadEscalations(
   followUps.forEach((fu) => {
     if (fu.status === 'completed') return;
 
-    const dueMs = new Date(fu.dueDate).getTime();
+    const dueMs = new Date(fu.dueDate || fu.date).getTime();
     if (isNaN(dueMs)) return;
 
     if (nowMs > dueMs) {
@@ -38,7 +38,7 @@ export function calculateLeadEscalations(
         siteName: photo?.siteName || 'Field Location',
         assignedStaffId: staff?.id || fu.userId || 'u1',
         assignedStaffName: staff?.name || fu.userName || 'Field Staff',
-        followUpDueDate: fu.dueDate,
+        followUpDueDate: fu.dueDate || fu.date,
         hoursOverdue: diffHours,
         urgencyLevel,
         status: 'pending_action',
