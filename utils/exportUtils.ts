@@ -32,7 +32,11 @@ export const formatPhoneForExcel = (phone: string | undefined | null): string =>
  * Exports site visit photo records to an Excel-ready CSV spreadsheet
  * with exact column alignment and comprehensive lead metadata.
  */
-export const exportPhotosToExcel = (photos: Photo[], filenamePrefix = 'FieldTrack_SiteVisits') => {
+export const exportPhotosToExcel = (
+  photos: Photo[],
+  filenamePrefix = 'FieldTrack_SiteVisits',
+  _auditMeta?: { actorUserId?: string; actorName?: string; actorRole?: string; selectedCount?: number }
+) => {
   if (!photos || photos.length === 0) {
     alert("No visit records available to export. Please adjust your filters or upload a site photo.");
     return;
@@ -93,8 +97,7 @@ export const exportPhotosToExcel = (photos: Photo[], filenamePrefix = 'FieldTrac
       ? p.customLeadSource 
       : (p.leadSource || 'Field Visit');
 
-    const statusStr = p.status === 'completed' ? 'Completed' 
-      : p.status === 'in-progress' ? 'In Progress' 
+    const statusStr = p.status === 'in-progress' ? 'In Progress' 
       : p.status === 'new' ? 'New Lead'
       : p.status === 'quoted' ? 'Quoted'
       : p.status === 'won' ? 'Won'
