@@ -113,14 +113,15 @@ export class ExifExtractionHandler implements PhotoHandler {
     if (payload.file) {
       try {
         const tags = await ExifReader.load(payload.file, { expanded: true });
+        const tagsAny = tags as any;
         let rawLat: number | undefined;
         let rawLng: number | undefined;
 
-        if (tags.gps) {
-          const latRef = tags.gps.LatitudeRef || tags.gps.GPSLatitudeRef;
-          const lngRef = tags.gps.LongitudeRef || tags.gps.GPSLongitudeRef;
-          rawLat = this.parseExifCoordinate(tags.gps.Latitude, latRef);
-          rawLng = this.parseExifCoordinate(tags.gps.Longitude, lngRef);
+        if (tagsAny.gps) {
+          const latRef = tagsAny.gps.LatitudeRef || tagsAny.gps.GPSLatitudeRef;
+          const lngRef = tagsAny.gps.LongitudeRef || tagsAny.gps.GPSLongitudeRef;
+          rawLat = this.parseExifCoordinate(tagsAny.gps.Latitude, latRef);
+          rawLng = this.parseExifCoordinate(tagsAny.gps.Longitude, lngRef);
         }
 
         if (rawLat !== undefined && rawLng !== undefined && !isNaN(rawLat) && !isNaN(rawLng)) {
@@ -135,8 +136,8 @@ export class ExifExtractionHandler implements PhotoHandler {
           payload.photo.locationSource = 'device';
         }
 
-        const makeTag = tags.Make || tags.image?.Make || tags.exif?.Make;
-        const modelTag = tags.Model || tags.image?.Model || tags.exif?.Model;
+        const makeTag = tagsAny.Make || tagsAny.image?.Make || tagsAny.exif?.Make;
+        const modelTag = tagsAny.Model || tagsAny.image?.Model || tagsAny.exif?.Model;
         const makeStr = makeTag?.description ? String(makeTag.description).trim() : '';
         const modelStr = modelTag?.description ? String(modelTag.description).trim() : '';
 
@@ -149,8 +150,8 @@ export class ExifExtractionHandler implements PhotoHandler {
         }
 
         let captureDate: string | undefined;
-        if (tags.exif) {
-          const dtTag = tags.exif.DateTimeOriginal || tags.exif.CreateDate || tags.exif.DateTime;
+        if (tagsAny.exif) {
+          const dtTag = tagsAny.exif.DateTimeOriginal || tagsAny.exif.CreateDate || tagsAny.exif.DateTime;
           if (dtTag && dtTag.description) {
             const parts = String(dtTag.description).trim().split(' ');
             if (parts.length === 2) {
