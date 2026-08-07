@@ -327,6 +327,8 @@ export default function AdminPanelView({
           photos={photos} 
           followUps={followUps} 
           teamMembers={teamMembers}
+          onReassignFollowUp={() => {}}
+          onCompleteFollowUp={() => {}}
         />
       )}
 
