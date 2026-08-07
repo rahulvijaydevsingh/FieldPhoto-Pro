@@ -83,7 +83,7 @@ export class DatabaseSaveHandler implements PhotoHandler {
       status: bufferResult.isBuffered || !payload.isOnline ? 'warning' : 'success',
       message: bufferResult.isBuffered || !payload.isOnline
         ? `[OFFLINE SYNC QUEUED] Photo ID ${finalPhoto.id} stored in local Room/IndexedDB queue: ${bufferResult.message}`
-        : `Persisted Photo ID: ${finalPhoto.id} [${finalPhoto.syncStatus.toUpperCase()}]`,
+        : `Persisted Photo ID: ${finalPhoto.id} [${(finalPhoto.syncStatus || 'pending').toUpperCase()}]`,
       timestamp: new Date().toISOString(),
     });
 
