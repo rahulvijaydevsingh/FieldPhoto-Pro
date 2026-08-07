@@ -25,7 +25,7 @@ export default function LiveRouteMap({ breadcrumbs, selectedUser }: LiveRouteMap
       return;
     }
 
-    let script = document.querySelector('script[src*="leaflet.js"]');
+    let script = document.querySelector<HTMLScriptElement>('script[src*="leaflet.js"]');
     if (!script) {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
@@ -243,7 +243,7 @@ export default function LiveRouteMap({ breadcrumbs, selectedUser }: LiveRouteMap
           ? c.userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
           : 'FS';
 
-        const avatarUrl = c.userAvatar || (selectedUser?.id === c.userId ? selectedUser.avatar : null);
+        const avatarUrl = c.userAvatar || (selectedUser?.id === c.userId ? selectedUser?.avatar : null);
 
         // Custom staff avatar pins/initials
         let pinHtml = '';
