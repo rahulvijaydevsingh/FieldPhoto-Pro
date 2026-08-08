@@ -6,7 +6,16 @@ const STORAGE_KEY = 'fieldops_odometer_readings';
 export function getLocalOdometerReadings(): OdometerReading[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+
+      const cleaned = parsed.filter((item: OdometerReading) => !item?.id?.startsWith('odo_sample_'));
+      if (cleaned.length !== parsed.length) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+      }
+      return cleaned;
+    }
     return [];
   } catch (e) {
     console.error('Failed to parse odometer readings:', e);
