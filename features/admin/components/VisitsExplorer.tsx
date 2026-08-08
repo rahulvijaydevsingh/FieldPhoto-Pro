@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Photo, User } from '../../../types';
-import { DEMO_ADMIN } from '../../../services/mockData';
 import { formatSafePhotoDateTime } from '../../../services/dateUtils';
 import { getDeviceModelInfo } from '../../../utils/locationUtils';
 import { exportPhotosToExcel } from '../../../utils/exportUtils';
@@ -10,6 +9,7 @@ import {
 } from 'lucide-react';
 
 interface VisitsExplorerProps {
+  currentUser: User;
   photos: Photo[];
   onUpdatePhoto?: (photo: Photo) => void;
   onDeletePhoto?: (photoId: string) => void;
@@ -20,6 +20,7 @@ interface VisitsExplorerProps {
 }
 
 export default function VisitsExplorer({
+  currentUser,
   photos,
   onUpdatePhoto,
   onDeletePhoto,
@@ -55,7 +56,7 @@ export default function VisitsExplorer({
 
   // Map photos into record format
   const photoRecords = photos.map(p => {
-    let normalizedUploader = p.staffMember || p.uploaderName || 'Amanpreet';
+    const normalizedUploader = p.staffMember || p.uploaderName || 'Staff';
     
     // Dynamic real device info resolution
     let devName = p.deviceInfo;
@@ -419,7 +420,7 @@ export default function VisitsExplorer({
 
             <ReviewEditor
               photo={editingPhoto}
-              user={DEMO_ADMIN}
+              user={currentUser}
               isOnline={true}
               leadSources={leadSources}
               personTypes={personTypes}
