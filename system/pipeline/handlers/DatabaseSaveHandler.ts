@@ -37,6 +37,7 @@ export class DatabaseSaveHandler implements PhotoHandler {
       uploaderName: payload.user.name,
       staffMember: payload.user.name,
       status: 'new',
+      photoType: 'lead',
       syncStatus: payload.isOnline ? 'synced' : 'pending',
       leadSource: 'Field Visit',
       site_lat: lat,

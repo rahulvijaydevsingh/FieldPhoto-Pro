@@ -4,6 +4,7 @@ import { User, Photo, FollowUp } from '../types';
 import ReviewEditor from './ReviewEditor';
 import { MapPin, Clock, ArrowRight, ArrowLeft, Trash2, FileText, Bookmark } from 'lucide-react';
 import { getSafePhotoDate } from '../services/dateUtils';
+import { isLeadPhoto } from '../utils/photoType';
 
 interface Props {
   user: User;
@@ -23,6 +24,7 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
   const pendingPhotos = photos
+    .filter(isLeadPhoto)
     .filter(p => p.status === 'new')
     .filter(p => {
       if (user.role === 'admin') return true;
@@ -107,18 +109,21 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
             return (
               <div key={photo.id} className="bg-[#2D2424] rounded-xl border border-[#3A2E2E] overflow-hidden flex gap-3 sm:gap-4 p-3 hover:border-field-gold/30 transition-all">
                 <div 
-                  onClick={() => setFullscreenImage(photo.url || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop')}
+                  onClick={() => photo.url && setFullscreenImage(photo.url)}
                   className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-black flex-shrink-0 overflow-hidden relative cursor-pointer group/thumb hover:border hover:border-field-gold transition-all"
                   title="Click to view full enlarged image"
                 >
-                  <img 
-                    src={photo.url || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop'} 
-                    alt="Site" 
-                    className="w-full h-full object-cover group-hover/thumb:scale-110 transition-transform" 
-                    onError={(e) => {
-                      e.currentTarget.src = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-                    }}
-                  />
+                  {photo.url ? (
+                    <img 
+                      src={photo.url}
+                      alt={photo.siteName || 'Site photo'}
+                      className="w-full h-full object-cover group-hover/thumb:scale-110 transition-transform"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-[#1A1515] text-[10px] text-gray-400 font-mono px-2 text-center">
+                      No image
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity">
                     <span className="text-[10px] text-white font-bold bg-black/60 px-2 py-0.5 rounded border border-white/30">
                       Enlarge
@@ -188,9 +193,6 @@ export default function PendingReviewsView({ user, photos, isOnline, leadSources
               src={fullscreenImage} 
               alt="Enlarged Lead View" 
               className="max-w-full max-h-[80vh] object-contain rounded-xl border border-[#3A2E2E] shadow-2xl"
-              onError={(e) => {
-                e.currentTarget.src = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-              }}
             />
             <p className="text-xs text-gray-400 mt-3 bg-black/60 px-4 py-1.5 rounded-full border border-gray-700">
               Click anywhere to close full photo view

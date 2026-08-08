@@ -37,7 +37,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
 
   // Filter State - Default to include all active statuses so leads are always visible
   const [dateFilter, setDateFilter] = useState<DateFilter>((initialDateFilter as DateFilter) || 'all');
-  const [statusFilter, setStatusFilter] = useState<string[]>(['in-progress', 'new', 'completed', 'quoted', 'won', 'lost', 'on-hold']);
+  const [statusFilter, setStatusFilter] = useState<string[]>(['in-progress', 'new', 'quoted', 'won', 'lost', 'on-hold']);
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
 
   useEffect(() => {
@@ -234,7 +234,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setShowFilters(!showFilters)} 
-            className={`p-2 rounded-xl border flex items-center gap-1.5 text-xs font-bold transition-all ${statusFilter.length < 7 || priorityFilter.length > 0 || dateFilter !== 'all' ? 'bg-field-gold text-black border-field-gold' : 'bg-[#1A1515] text-gray-300 border-[#3A2E2E] hover:border-gray-500'}`}
+            className={`p-2 rounded-xl border flex items-center gap-1.5 text-xs font-bold transition-all ${statusFilter.length < 6 || priorityFilter.length > 0 || dateFilter !== 'all' ? 'bg-field-gold text-black border-field-gold' : 'bg-[#1A1515] text-gray-300 border-[#3A2E2E] hover:border-gray-500'}`}
           >
             <Filter size={16} />
             <span>Filter</span>
@@ -329,7 +329,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
             <Search size={48} className="mb-4 opacity-20" />
             <p className="text-sm font-medium">No lead photos match your filter criteria</p>
             <button 
-              onClick={() => { setSearchTerm(''); setDateFilter('all'); setStatusFilter(['in-progress', 'new', 'completed', 'quoted', 'won', 'lost', 'on-hold']); setPriorityFilter([]); }} 
+              onClick={() => { setSearchTerm(''); setDateFilter('all'); setStatusFilter(['in-progress', 'new', 'quoted', 'won', 'lost', 'on-hold']); setPriorityFilter([]); }} 
               className="mt-4 text-field-gold text-xs font-bold underline"
             >
               Clear all filters
@@ -515,10 +515,10 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
                   {[
                     { id: 'in-progress', label: 'Active (In Progress)' },
                     { id: 'new', label: 'New Lead' },
-                    { id: 'completed', label: 'Completed' },
                     { id: 'quoted', label: 'Quoted' },
                     { id: 'won', label: 'Won' },
-                    { id: 'lost', label: 'Lost' }
+                    { id: 'lost', label: 'Lost' },
+                    { id: 'on-hold', label: 'On Hold' }
                   ].map(st => (
                     <button
                       key={st.id}
@@ -552,7 +552,7 @@ export default function GalleryView({ user, photos, initialDateFilter, onExport,
 
             <div className="flex gap-4 mt-8 pt-4 border-t border-[#3A2E2E]">
               <button 
-                onClick={() => { setDateFilter('all'); setStatusFilter(['in-progress', 'new', 'completed', 'quoted', 'won', 'lost', 'on-hold']); setPriorityFilter([]); setShowFilters(false); }}
+                onClick={() => { setDateFilter('all'); setStatusFilter(['in-progress', 'new', 'quoted', 'won', 'lost', 'on-hold']); setPriorityFilter([]); setShowFilters(false); }}
                 className="flex-1 py-3 border border-field-gold text-field-gold rounded-xl font-bold hover:bg-field-gold/10 transition-colors"
               >
                 Clear All

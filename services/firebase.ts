@@ -330,8 +330,8 @@ export function subscribeRouteBreadcrumbs(onUpdate: (breadcrumbs: any[]) => void
                   ...p,
                   batchId: data.batchId,
                   type: 'telemetry_ping',
-                  userId: p.userId || data.userId,
-                  userName: p.userName || data.userName,
+                  userId: p.userId,
+                  userName: p.userName,
                 });
               }
             });

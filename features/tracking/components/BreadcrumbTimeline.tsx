@@ -62,7 +62,7 @@ export default function BreadcrumbTimeline({ breadcrumbs }: BreadcrumbTimelinePr
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-bold text-white flex items-center gap-1">
                   <MapPin size={12} className="text-[#D99026]" />
-                  {crumb.userName || 'Field Staff'}
+                  {crumb.userName || 'Unknown staff'}
                 </span>
                 {getSourceBadge(crumb.sourceEvent)}
                 {crumb.isMocked && (
@@ -90,7 +90,7 @@ export default function BreadcrumbTimeline({ breadcrumbs }: BreadcrumbTimelinePr
             <div className="flex items-center justify-between text-[10px] font-mono text-gray-400 pt-0.5 border-t border-gray-800">
               <div className="truncate flex items-center gap-1 max-w-[70%]">
                 <ShieldCheck size={10} className="text-emerald-400 flex-shrink-0" />
-                <span className="truncate">{crumb.plusCode || 'Verified GPS'}</span>
+                <span className="truncate">{crumb.plusCode || 'Location code unavailable'}</span>
               </div>
               {crumb.batteryLevel !== undefined && (
                 <span className="flex items-center gap-0.5 text-gray-400">

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Photo, FollowUp, User, RecycleItem, RouteBreadcrumb } from '../../../types';
-import { DEMO_ADMIN, DEMO_STAFF } from '../../../services/mockData';
 import { subscribeRouteBreadcrumbs } from '../../../services/firebase';
 import ConfigCard from './ConfigCard';
 import RecycleBin from './RecycleBin';
@@ -20,6 +19,7 @@ import RouteTrackerView from '../../tracking/components/RouteTrackerView';
 import { Database, Users, Tag, Hammer, FileText, BookOpen, MapPin, Activity, Settings, Trash2, LayoutGrid, Radio, Shield, Clock, BarChart3, ShieldAlert, Navigation, Gauge } from 'lucide-react';
 
 interface AdminPanelViewProps {
+  currentUser: User;
   photos: Photo[];
   followUps: FollowUp[];
   leadSources: string[];
@@ -40,6 +40,7 @@ interface AdminPanelViewProps {
 type AdminTab = 'visits' | 'staff' | 'analytics' | 'escalations' | 'geofences' | 'attendance' | 'diagnostics' | 'config';
 
 export default function AdminPanelView({ 
+  currentUser,
   photos, 
   followUps, 
   leadSources, onUpdateLeadSources,
@@ -56,14 +57,11 @@ export default function AdminPanelView({
       try {
         const parsed: User[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(u => (u.id === 'u2' || u.name === 'Amanpreet') && (u.email.includes('rajesh') || u.email.includes('staff@company')) ? { ...u, email: 'meera@maharajacrm.com' } : u);
+          return parsed;
         }
       } catch (e) {}
     }
-    return [
-      DEMO_ADMIN,
-      DEMO_STAFF
-    ];
+    return [currentUser];
   });
 
   const [cloudBreadcrumbs, setCloudBreadcrumbs] = useState<RouteBreadcrumb[]>([]);
@@ -287,6 +285,7 @@ export default function AdminPanelView({
 
           {/* FieldTrack Dashboard - Visits Records Explorer */}
           <VisitsExplorer 
+            currentUser={currentUser}
             photos={photos} 
             onUpdatePhoto={onUpdatePhoto}
             onDeletePhoto={onDeletePhoto}
@@ -302,7 +301,7 @@ export default function AdminPanelView({
       {activeTab === 'staff' && (
         <div className="space-y-6">
           {/* Live GPS Route Breadcrumb Tracking UI */}
-          <RouteTrackerView currentUser={DEMO_ADMIN} teamMembers={teamMembers} />
+          <RouteTrackerView currentUser={currentUser} teamMembers={teamMembers} />
 
           <StaffManagement 
             members={teamMembers}
@@ -334,12 +333,12 @@ export default function AdminPanelView({
 
       {/* TAB GEOFENCES: Boundary Control & Event Stream */}
       {activeTab === 'geofences' && (
-        <GeofencesManager currentUser={DEMO_ADMIN} teamMembers={teamMembers} />
+        <GeofencesManager currentUser={currentUser} teamMembers={teamMembers} />
       )}
 
       {/* TAB ATTENDANCE: Audit Logs */}
       {activeTab === 'attendance' && (
-        <AttendanceView currentUser={DEMO_ADMIN} teamMembers={teamMembers} />
+        <AttendanceView currentUser={currentUser} teamMembers={teamMembers} />
       )}
 
       {/* TAB 3: System Diagnostics & Offline Sync */}
@@ -352,7 +351,7 @@ export default function AdminPanelView({
           <BufferInspector />
 
           {/* Post-Processing Ingestion Handler Chain Pipeline Inspector */}
-          <PipelineInspector currentUser={DEMO_ADMIN} />
+          <PipelineInspector currentUser={currentUser} />
         </div>
       )}
 

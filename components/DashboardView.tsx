@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { User, Photo, FollowUp } from '../types';
 import { Calendar, AlertTriangle, CheckCircle, Clock, Phone, Navigation, Bell, BarChart3, Cloud, Hourglass, X } from 'lucide-react';
 import { getSafePhotoDate } from '../services/dateUtils';
+import { isLeadPhoto } from '../utils/photoType';
 
 interface Props {
   user: User;
@@ -25,6 +26,8 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
                (p.staffMember && p.staffMember.toLowerCase() === uName);
       });
 
+  const myLeadPhotos = myPhotos.filter(isLeadPhoto);
+
   const myFollowUps = user.role === 'admin' 
     ? followUps 
     : followUps.filter(f => {
@@ -35,18 +38,18 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
       });
 
   // Updated status check
-  const pendingReviews = myPhotos.filter(p => p.status === 'new').length;
+  const pendingReviews = myLeadPhotos.filter(p => p.status === 'new').length;
   
   const overdueFollowUps = myFollowUps.filter(f => f.status === 'overdue' || (f.status === 'pending' && new Date(f.date) < new Date(new Date().setHours(0,0,0,0)))).length;
   const today = new Date();
-  const uploadedToday = myPhotos.filter(p => {
+  const uploadedToday = myLeadPhotos.filter(p => {
     const d = getSafePhotoDate(p.captureDate, p.uploadDate);
     return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
   }).length;
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const uploadedYesterday = myPhotos.filter(p => {
+  const uploadedYesterday = myLeadPhotos.filter(p => {
     const d = getSafePhotoDate(p.captureDate, p.uploadDate);
     return d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear();
   }).length;
@@ -61,7 +64,7 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
   const startOfWeek = new Date(today);
   startOfWeek.setDate(today.getDate() - today.getDay());
   startOfWeek.setHours(0, 0, 0, 0);
-  const uploadedThisWeek = myPhotos.filter(p => {
+  const uploadedThisWeek = myLeadPhotos.filter(p => {
     const d = getSafePhotoDate(p.captureDate, p.uploadDate);
     return d >= startOfWeek;
   }).length;
@@ -151,7 +154,7 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
                            <div className="mt-1 text-field-gold"><Clock size={16} /></div>
                            <div>
                              <p className="text-sm font-bold text-white">Pending Reviews</p>
-                             <p className="text-xs text-gray-400">{pendingReviews} items waiting for upload.</p>
+              <p className="text-xs text-gray-400">{pendingReviews} lead photos waiting for review.</p>
                            </div>
                          </div>
                       </div>
@@ -298,8 +301,8 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
         <div>
            <h3 className="text-lg font-bold text-white mb-4 px-1">Recent Uploads</h3>
            <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-              {myPhotos.slice(0, 8).map(photo => {
-                const imgUrl = photo.url || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
+              {myLeadPhotos.slice(0, 8).map(photo => {
+                const imgUrl = photo.url;
                 return (
                   <div 
                     key={photo.id} 
@@ -307,14 +310,17 @@ export default function DashboardView({ user, photos, followUps, onChangeView, o
                     className="min-w-[160px] w-[160px] h-[200px] rounded-xl relative overflow-hidden group cursor-pointer border border-[#3A2E2E] hover:border-field-gold transition-all"
                     title="Click photo to enlarge"
                   >
-                     <img 
-                       src={imgUrl} 
-                       alt={photo.siteName || photo.fileName} 
-                       className="w-full h-full object-cover transition-transform group-hover:scale-110" 
-                       onError={(e) => {
-                         e.currentTarget.src = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-                       }}
-                     />
+                      {imgUrl ? (
+                        <img 
+                          src={imgUrl}
+                          alt={photo.siteName || photo.fileName}
+                          className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-[#1A1515] text-[10px] text-gray-400 font-mono px-2 text-center">
+                          No image
+                        </div>
+                      )}
                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
                      <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded border border-white/20">
                         {getSafePhotoDate(photo.captureDate, photo.uploadDate).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
