@@ -17,6 +17,7 @@ import { settingsRepository } from '../../../repositories/settingsRepository';
 import { teamRepository } from '../../../repositories/teamRepository';
 import { addLocalBreadcrumb } from '../../../utils/routeLogger';
 import { Photo, SyncStatus, StaffLocation } from '../../../types';
+import { DEMO_ADMIN, DEMO_STAFF } from '../../../services/mockData';
 
 export default function ViewRouter() {
   const currentUser = useAppStore(s => s.currentUser);
@@ -59,10 +60,7 @@ export default function ViewRouter() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return [
-      { id: 'u1', name: 'Rajesh Kumar', email: 'admin@company.com', role: 'admin', phone: '+91 98765 43210', active: true },
-      { id: 'u2', name: 'Amanpreet Singh', email: 'meera@maharajacrm.com', role: 'staff', phone: '+91 98765 43211', active: true }
-    ];
+    return [DEMO_ADMIN, DEMO_STAFF];
   }, [currentUser]);
 
   const handleAddPhoto = (newPhoto: Photo) => {
@@ -190,6 +188,7 @@ export default function ViewRouter() {
             return currentUser.role === 'admin' ? (
               <div className="p-4 md:p-0">
                 <AdminPanelView 
+                  currentUser={currentUser}
                   photos={photos} 
                   followUps={followUps}
                   leadSources={leadSources}
