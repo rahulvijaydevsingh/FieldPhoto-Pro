@@ -272,7 +272,7 @@ export default function LiveRouteMap({ breadcrumbs, selectedUser }: LiveRouteMap
 
         const staffPopup = `
           <div style="color: black; font-family: sans-serif; font-size: 12px; padding: 4px; line-height: 1.4;">
-            <strong style="color: #D99026; font-size: 13px;">${c.userName || 'Field Representative'}</strong>
+            <strong style="color: #D99026; font-size: 13px;">${c.userName || 'Unknown staff'}</strong>
             <div style="margin-top: 4px;">Last Activity: <span style="font-weight: bold; color: #555;">${new Date(c.timestamp).toLocaleTimeString()}</span></div>
             <div>Position: <span style="font-family: monospace;">${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}</span></div>
             <div>GPS Accuracy: <span>±${Math.round(accuracyRadius)}m</span></div>

@@ -4,6 +4,7 @@ import { formatSafePhotoDateTime } from '../../../services/dateUtils';
 import { getDeviceModelInfo } from '../../../utils/locationUtils';
 import { exportPhotosToExcel } from '../../../utils/exportUtils';
 import ReviewEditor from '../../../components/ReviewEditor';
+import { isLeadPhoto } from '../../../utils/photoType';
 import { 
   RefreshCw, Download, Check, X, Search, Eye, Edit2, Trash2, Maximize2, MapPin
 } from 'lucide-react';
@@ -54,8 +55,10 @@ export default function VisitsExplorer({
     }
   };
 
+  const leadPhotos = photos.filter(isLeadPhoto);
+
   // Map photos into record format
-  const photoRecords = photos.map(p => {
+  const photoRecords = leadPhotos.map(p => {
     const normalizedUploader = p.staffMember || p.uploaderName || 'Staff';
     
     // Dynamic real device info resolution
@@ -70,11 +73,11 @@ export default function VisitsExplorer({
       siteName: p.siteName || p.fileName || 'Site Visit',
       staffMember: normalizedUploader,
       status: p.status === 'in-progress' ? 'In Progress' : p.hasDraft ? 'Draft' : 'New Upload',
-      lat: p.site_lat !== undefined ? p.site_lat : (p.gps?.lat || 30.901000),
-      lng: p.site_lng !== undefined ? p.site_lng : (p.gps?.lng || 75.857300),
+      lat: p.site_lat !== undefined ? p.site_lat : (p.gps?.lat || 0),
+      lng: p.site_lng !== undefined ? p.site_lng : (p.gps?.lng || 0),
       dateStr: formatSafePhotoDateTime(p.captureDate, p.uploadDate),
       deviceInfo: `${devName} ${gpsTag}`,
-      url: p.url || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
+      url: p.url,
       originalPhoto: p
     };
   });
@@ -305,18 +308,21 @@ export default function VisitsExplorer({
                   </td>
                   <td className="py-3.5 px-4">
                     <div 
-                      onClick={() => setFullscreenImage(rec.url)}
+                      onClick={() => rec.url && setFullscreenImage(rec.url)}
                       className="w-12 h-12 rounded-lg bg-black border border-[#3A2E2E] overflow-hidden cursor-pointer relative group/img hover:border-field-gold transition-colors"
                       title="Click to view full image"
                     >
-                      <img 
-                        src={rec.url} 
-                        alt="Thumbnail" 
-                        className="w-full h-full object-cover group-hover/img:scale-110 transition-transform" 
-                        onError={(e) => {
-                          e.currentTarget.src = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-                        }}
-                      />
+                      {rec.url ? (
+                        <img 
+                          src={rec.url}
+                          alt="Thumbnail"
+                          className="w-full h-full object-cover group-hover/img:scale-110 transition-transform"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[9px] text-gray-500 font-mono px-1 text-center">
+                          No image
+                        </div>
+                      )}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity">
                         <Maximize2 size={12} className="text-white" />
                       </div>
@@ -457,9 +463,6 @@ export default function VisitsExplorer({
               src={fullscreenImage} 
               alt="Full view" 
               className="max-w-full max-h-[80vh] object-contain rounded-xl border border-[#3A2E2E] shadow-2xl"
-              onError={(e) => {
-                e.currentTarget.src = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-              }}
             />
             <p className="text-xs text-gray-400 mt-3 bg-black/60 px-4 py-1.5 rounded-full border border-gray-700">
               Click anywhere on picture or screen to revert back to list view
@@ -496,9 +499,6 @@ export default function VisitsExplorer({
                   alt="Site" 
                   onClick={() => setFullscreenImage(selectedTelemetryPhoto.url)}
                   className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition-opacity" 
-                  onError={(e) => {
-                    e.currentTarget.src = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-                  }}
                 />
                 <div className="absolute top-3 left-3 flex gap-2">
                   <span className="bg-field-gold text-black text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
@@ -544,7 +544,7 @@ export default function VisitsExplorer({
                   </a>
                 )}
               </div>
-              <p className="text-sm font-semibold text-white">{selectedTelemetryPhoto.siteName || 'Address Pending Entry'}</p>
+              <p className="text-sm font-semibold text-white">{selectedTelemetryPhoto.siteName || selectedTelemetryPhoto.fileName || 'Unnamed site'}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs font-mono">
                 <div className="bg-[#2D2424] p-2 rounded-lg border border-[#3A2E2E]">
                   <span className="text-gray-500 text-[10px] block flex items-center justify-between">
@@ -553,11 +553,11 @@ export default function VisitsExplorer({
                       {selectedTelemetryPhoto.locationSource === 'exif' ? '📷 EXIF GPS' : '📡 Device GPS'}
                     </span>
                   </span>
-                  <span className="text-emerald-400 font-bold">{(selectedTelemetryPhoto.site_lat || selectedTelemetryPhoto.gps?.lat || 30.901000).toFixed(6)}, {(selectedTelemetryPhoto.site_lng || selectedTelemetryPhoto.gps?.lng || 75.857300).toFixed(6)}</span>
+                  <span className="text-emerald-400 font-bold">{(selectedTelemetryPhoto.site_lat || selectedTelemetryPhoto.gps?.lat || 0).toFixed(6)}, {(selectedTelemetryPhoto.site_lng || selectedTelemetryPhoto.gps?.lng || 0).toFixed(6)}</span>
                 </div>
                 <div className="bg-[#2D2424] p-2 rounded-lg border border-[#3A2E2E]">
                   <span className="text-gray-500 text-[10px] block">Plus Code</span>
-                  <span className="text-field-gold font-bold">{selectedTelemetryPhoto.plusCode || '8J52W724+8Q Ludhiana'}</span>
+                  <span className="text-field-gold font-bold">{selectedTelemetryPhoto.plusCode || 'Not captured'}</span>
                 </div>
               </div>
             </div>
