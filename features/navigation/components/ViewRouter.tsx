@@ -17,7 +17,6 @@ import { settingsRepository } from '../../../repositories/settingsRepository';
 import { teamRepository } from '../../../repositories/teamRepository';
 import { addLocalBreadcrumb } from '../../../utils/routeLogger';
 import { Photo, SyncStatus, StaffLocation } from '../../../types';
-import { DEMO_ADMIN, DEMO_STAFF } from '../../../services/mockData';
 
 export default function ViewRouter() {
   const currentUser = useAppStore(s => s.currentUser);
@@ -60,7 +59,7 @@ export default function ViewRouter() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return [DEMO_ADMIN, DEMO_STAFF];
+    return currentUser ? [currentUser] : [];
   }, [currentUser]);
 
   const handleAddPhoto = (newPhoto: Photo) => {

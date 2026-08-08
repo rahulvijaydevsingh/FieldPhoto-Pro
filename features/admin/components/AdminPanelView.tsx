@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Photo, FollowUp, User, RecycleItem, RouteBreadcrumb } from '../../../types';
-import { DEMO_ADMIN, DEMO_STAFF } from '../../../services/mockData';
 import { subscribeRouteBreadcrumbs } from '../../../services/firebase';
 import ConfigCard from './ConfigCard';
 import RecycleBin from './RecycleBin';
@@ -58,14 +57,11 @@ export default function AdminPanelView({
       try {
         const parsed: User[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(u => (u.id === 'u2' || u.name === 'Amanpreet') && (u.email.includes('rajesh') || u.email.includes('staff@company')) ? { ...u, email: 'meera@maharajacrm.com' } : u);
+          return parsed;
         }
       } catch (e) {}
     }
-    return [
-      DEMO_ADMIN,
-      DEMO_STAFF
-    ];
+    return [currentUser];
   });
 
   const [cloudBreadcrumbs, setCloudBreadcrumbs] = useState<RouteBreadcrumb[]>([]);
@@ -289,6 +285,7 @@ export default function AdminPanelView({
 
           {/* FieldTrack Dashboard - Visits Records Explorer */}
           <VisitsExplorer 
+            currentUser={currentUser}
             photos={photos} 
             onUpdatePhoto={onUpdatePhoto}
             onDeletePhoto={onDeletePhoto}
