@@ -28,7 +28,19 @@ export function subscribeUserBreadcrumbs(
       onUpdate([]);
       return;
     }
-    const filtered = allCrumbs.filter(c => !userId || userId === 'all' || c.userId === userId);
+    const selectedId = (userId || '').trim().toLowerCase();
+    const filtered = allCrumbs.filter((c) => {
+      if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') {
+        return false;
+      }
+
+      if (!selectedId || selectedId === 'all') {
+        return true;
+      }
+
+      const crumbUserId = (c.userId || '').trim().toLowerCase();
+      return crumbUserId === selectedId;
+    });
     onUpdate(filtered);
   });
 }
